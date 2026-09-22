@@ -1,6 +1,7 @@
 # Manual da Mesa — Terminal Fenrir
 
-Documento de uso restrito à diretoria e aos administradores do desafio.
+Documento da diretoria: descreve como a Mesa opera o desafio. É público junto
+com o repositório — não guarde senha, chave nem dado de participante aqui.
 Substitui o `Manual_do_Administrador_de_Desafio_FENRIR___LIMFIE.pdf`, que
 descreve a versão antiga (Streamlit + Google Sheets) e **não vale mais**.
 

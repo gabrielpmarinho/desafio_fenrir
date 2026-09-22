@@ -1,11 +1,67 @@
 # Terminal Fenrir — LIMFIE UFRJ
 
-Plataforma do Desafio Fenrir: simulação de gestão de carteira para treinar novos
-membros da liga fora da temporada de desafios externos (JGP, Safra, Ágora).
+Plataforma do **Desafio Fenrir**, a competição interna da Liga de Mercado
+Financeiro da UFRJ. Cada grupo de novos membros recebe um fundo fictício de
+R$ 100 milhões e o gere por uma temporada: envia ordens no fim de semana, vê a
+cota ser apurada todo dia útil e disputa um ranking com os outros grupos. Serve
+para treinar a turma nova fora da temporada dos desafios externos (JGP, Safra,
+Ágora), com as mesmas regras que eles vão encontrar lá fora.
 
-Reescrita de 2026. A versão anterior (Streamlit + Google Sheets) está preservada
-em `../Desafio_Limfie` apenas como referência — **não use como base de código**:
-o motor de liquidação dela aplicava cada ordem duas vezes.
+O sistema faz três coisas: **recebe as boletas** dos participantes, **liquida e
+apura** as cotas a partir de preços reais de mercado, e **mostra** a carteira, o
+extrato e o ranking. Quem opera isso é a Mesa — a diretoria do desafio.
+
+Django 5.2 + SQLite (Postgres previsto para o deploy), preços via yfinance e CDI
+via API do Banco Central. Sem dependência paga e sem serviço externo além dessas
+duas fontes de dados.
+
+## Para quem está assumindo o projeto
+
+Este repositório foi escrito para ser **entregue a outra pessoa**. Se você é o
+próximo diretor de competições, comece por aqui.
+
+**Rodando em cinco minutos** — veja *Configuração* abaixo. O comando
+`semear_demo` cria quatro fundos fictícios com histórico, para você navegar pelas
+telas com conteúdo de verdade antes de encostar em qualquer coisa.
+
+**Os quatro documentos e para que serve cada um:**
+
+| Documento | Responde |
+|---|---|
+| `README.md` (este) | O que é o sistema, como rodar, o que falta fazer, o que já mudou |
+| `REGULAMENTO.md` | As regras do desafio, do ponto de vista do **participante** |
+| `MANUAL_ADMIN.md` | Como a **Mesa** opera: rotina diária, nova edição, troubleshooting |
+| `git log` | O que mudou linha a linha, e o *Registro de mudanças* no fim deste arquivo diz por quê |
+
+**O ciclo de uma edição**, em ordem: cadastrar a edição e os grupos
+(`MANUAL_ADMIN.md` §4) → rodar a rotina diária enquanto o desafio corre
+(*Rotina da Mesa*, abaixo) → encerrar e apurar o resultado final
+(`MANUAL_ADMIN.md` §3.3).
+
+**O que você herda junto:** a lista *A fazer* logo abaixo é real e priorizada —
+os dois primeiros itens (agendamento e deploy) são o que separa o sistema de
+rodar sozinho. Nada ali é dívida escondida; está tudo escrito.
+
+### Decisões que parecem estranhas e não são
+
+Se você for mexer, leia isto antes — são escolhas deliberadas que já custaram
+caro para serem descobertas:
+
+- **O ledger é append-only.** `Trade` e `Lancamento` nunca são editados nem
+  apagados. Erro se corrige com lançamento contrário, não com `UPDATE`. A versão
+  anterior mutava o estado e **aplicava cada ordem duas vezes** na liquidação;
+  foi esse bug que motivou a reescrita.
+- **Só preço de fechamento.** Nada de preço intradiário, nem de "preço do dia
+  anterior" para tapar buraco. Preencher lacuna com preço velho falsifica cota.
+- **A cota do próprio grupo é diária; a dos outros, semanal.** Não é limitação
+  técnica: ansiedade com o próprio número leva a operar demais, e é justamente o
+  vício que o desafio quer curar.
+- **Segredo nenhum no repositório.** A versão anterior vazou uma chave de service
+  account porque o `.gitignore` estava vazio. Hoje a `SECRET_KEY` vem do
+  ambiente e, sem ela, o servidor de produção se recusa a subir.
+- **A versão antiga (Streamlit + Google Sheets) está em `../Desafio_Limfie`.**
+  É referência histórica, **não** base de código — o motor de liquidação dela é
+  justamente o que estava errado.
 
 ## Estado atual
 
@@ -62,7 +118,8 @@ Lista viva — o que sai daqui vai para o registro no fim do arquivo.
 | 3 | **CDI do BCB** | Hoje é taxa diária constante. Se o desafio passar de 3 meses, puxar a série do BCB (**série 12** — a 11 é Selic). |
 | 4 | **Regulamento desatualizado** | Preço de execução, cota diária e aluguel de short já estão no código, mas não no texto do `REGULAMENTO.md`. |
 | 5 | **Integração de preços sem teste** | `desafio/servicos/precos.py` fala com yfinance e BCB e não tem teste — nem com rede, nem com resposta gravada. Vale agora também para `puxar_benchmarks`. |
-| 6 | **Primeira semana do desafio** | Antes da primeira sexta, o ranking mostra a apuração mais recente (recuo do `data_do_ranking`). Decidir se a tela deve avisar que aquela foto ainda é parcial. |
+| 6 | **Licença do repositório** | Sem `LICENSE`, o código é "todos os direitos reservados" por padrão — nem outro membro da liga pode reusar legalmente. Decisão da diretoria; MIT é o usual em projeto acadêmico. |
+| 7 | **Primeira semana do desafio** | Antes da primeira sexta, o ranking mostra a apuração mais recente (recuo do `data_do_ranking`). Decidir se a tela deve avisar que aquela foto ainda é parcial. |
 
 ## Configuração
 
@@ -102,13 +159,6 @@ python manage.py fechar_dia --data 2026-10-05       # todo dia útil, por últim
 
 Use `--simular` em `liquidar_semana` para ver o resultado sem gravar.
 
-## Documentos
-
-- `MANUAL_ADMIN.md` — manual da mesa (atual).
-- `../Desafio_Limfie/Documentos/` — regulamento vigente e manual antigo. O
-  manual antigo descreve a versão Streamlit e está obsoleto; o regulamento
-  precisa das atualizações listadas acima.
-
 ## Registro de mudanças
 
 Uma entrada por sessão de trabalho, com **o que mudou** e **o que ficou pendente**.
@@ -116,6 +166,28 @@ Mantido a pedido do Gabriel (21/09/2026) para que o contexto não se perca entre
 Desde 22/09/2026 o projeto também está sob git: o `git log` conta o que mudou linha a
 linha, e este registro conta **por quê** — as duas coisas se completam, nenhuma substitui
 a outra.
+
+### 2026-09-22 (noite) — repositório público e README de passagem
+
+- Projeto publicado em **github.com/gabrielpmarinho/desafio_fenrir** (público).
+  Primeiro commit com 51 arquivos; `db.sqlite3`, `.secret_key`, `__pycache__/` e
+  `.pytest_cache/` confirmados fora do versionamento.
+- **A `SECRET_KEY` de desenvolvimento saiu do código.** Estava embutida como fallback no
+  `settings.py`, logo abaixo de um comentário dizendo que chave não vai em arquivo
+  versionado. Agora: sem `DJANGO_SECRET_KEY` e fora de `DEBUG`, o servidor levanta
+  `ImproperlyConfigured` e não sobe; em desenvolvimento a chave é gerada na primeira
+  execução e guardada em `.secret_key`, ignorado pelo git. Gerar a cada boot deslogaria
+  todo mundo a cada reload do runserver.
+- `.gitattributes` com `eol=lf` (escrito no Windows, roda em Linux) e seção
+  **Configuração** no README com as variáveis de ambiente.
+- README reescrito com a moldura de **passagem de bastão**: o que é o sistema para quem
+  nunca viu, o mapa dos quatro documentos, o ciclo de uma edição e a seção *Decisões que
+  parecem estranhas e não são* — as escolhas que um sucessor desfaria sem saber o preço.
+- `MANUAL_ADMIN.md` deixou de se declarar "de uso restrito": agora é público junto com o
+  repositório, com o aviso de não guardar senha nem dado de participante ali.
+- Removido o arquivo vazio `VS` (0 bytes, sobra de algum comando).
+
+**Pendente aqui:** licença e topics do repositório (ver *A fazer*).
 
 ### 2026-09-22 (tarde) — seis adições nas telas
 
