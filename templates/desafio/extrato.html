@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% load humanize %}
+{% block titulo %}Extrato{% endblock %}
+{% block conteudo %}
+<h1>Extrato — {{ fundo.nome }}</h1>
+<p class="sub">Histórico completo. Nada aqui é editado depois de gravado.</p>
+
+<h2>Operações executadas</h2>
+{% if trades %}
+<table>
+  <tr><th>Data</th><th>Ativo</th><th class="num">Quantidade</th><th class="num">Preço</th><th class="num">Câmbio</th><th class="num">Financeiro (R$)</th></tr>
+  {% for t in trades %}
+  <tr>
+    <td>{{ t.executado_em|date:"d/m/Y" }}</td>
+    <td>{{ t.ticker }}</td>
+    <td class="num {% if t.quantidade < 0 %}cai{% else %}sobe{% endif %}">{{ t.quantidade|intcomma }}</td>
+    <td class="num">{{ t.preco_nativo|floatformat:2|intcomma }}</td>
+    <td class="num">{{ t.cambio|floatformat:4 }}</td>
+    <td class="num">{{ t.financeiro|floatformat:2|intcomma }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}<p class="vazio">Nenhuma operação executada.</p>{% endif %}
+
+<h2>Lançamentos de caixa</h2>
+{% if lancamentos %}
+<table>
+  <tr><th>Data</th><th>Tipo</th><th>Descrição</th><th class="num">Valor (R$)</th></tr>
+  {% for l in lancamentos %}
+  <tr>
+    <td>{{ l.executado_em|date:"d/m/Y" }}</td>
+    <td>{{ l.get_tipo_display }}</td>
+    <td>{{ l.descricao }}</td>
+    <td class="num {% if l.valor < 0 %}cai{% endif %}">{{ l.valor|floatformat:2|intcomma }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}<p class="vazio">Nenhum lançamento. Sem posição vendida, não há aluguel a pagar.</p>{% endif %}
+{% endblock %}

@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% load humanize %}
+{% block titulo %}Carteira{% endblock %}
+{% block conteudo %}
+<h1>{{ fundo.nome }}</h1>
+<p class="sub">
+  {% if visao.apurada %}Posição de {{ visao.data|date:"d/m/Y" }}, marcada pelo fechamento.
+  {% else %}O desafio ainda não teve apuração. Estes são os valores de partida.{% endif %}
+</p>
+
+{% if avisos %}
+<div class="cartao mural">
+  <h3>Avisos do Diretor de Competições</h3>
+  {% for aviso in avisos %}
+  <div class="item">
+    <strong>{{ aviso.titulo }}</strong>
+    <div style="margin-top:4px">{{ aviso.mensagem|linebreaksbr }}</div>
+    <div class="quando">
+      publicado em {{ aviso.criado_em|date:"d/m/Y H:i" }}{% if aviso.vigente_ate %} · vale até {{ aviso.vigente_ate|date:"d/m/Y" }}{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="cartoes">
+  <div class="cartao">
+    <div class="rotulo">Cota</div>
+    <div class="valor">{{ visao.cota|floatformat:2 }}</div>
+  </div>
+  <div class="cartao">
+    <div class="rotulo">Rentabilidade</div>
+    <div class="valor {% if visao.rentabilidade >= 0 %}sobe{% else %}cai{% endif %}">
+      {{ visao.rentabilidade|floatformat:2 }}%
+    </div>
+  </div>
+  <div class="cartao">
+    <div class="rotulo">Patrimônio</div>
+    <div class="valor">R$ {{ visao.patrimonio|floatformat:2|intcomma }}</div>
+  </div>
+  <div class="cartao">
+    <div class="rotulo">Caixa livre</div>
+    <div class="valor">R$ {{ visao.caixa|floatformat:2|intcomma }}</div>
+  </div>
+  <div class="cartao">
+    <div class="rotulo">Exposição bruta</div>
+    <div class="valor">R$ {{ visao.exposicao_bruta|floatformat:2|intcomma }}</div>
+  </div>
+</div>
+
+{% if ultimos %}
+<h2>Cota dos últimos 7 dias</h2>
+<table>
+  <tr><th>Dia</th><th class="num">Cota</th><th class="num">Variação</th></tr>
+  {% for linha in ultimos %}
+  <tr>
+    <td>{{ linha.data|date:"d/m/Y" }}</td>
+    <td class="num">{{ linha.cota|floatformat:2 }}</td>
+    <td class="num {% if linha.variacao > 0 %}sobe{% elif linha.variacao < 0 %}cai{% endif %}">
+      {% if linha.variacao is None %}—{% else %}{{ linha.variacao|floatformat:2 }}%{% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+
+<h2>Evolução contra o mercado</h2>
+<div class="painel-grafico">
+  <div class="abas-grafico">
+    <button type="button" class="aba ativa" data-serie="cdi">CDI</button>
+    <button type="button" class="aba" data-serie="ibov">Ibovespa</button>
+    <button type="button" class="aba" data-serie="sp">S&amp;P 500</button>
+  </div>
+  <canvas id="grafico-comparado" height="110"></canvas>
+  <p class="sub" style="margin:12px 0 0;font-size:12px">
+    Tudo em base 100 no primeiro fechamento do fundo. Sua cota fica sempre visível;
+    as abas ligam e desligam a referência — dá para ver mais de uma ao mesmo tempo.
+  </p>
+</div>
+
+{% endif %}<h2>Posições</h2>
+{% if visao.posicoes %}
+<table>
+  <tr>
+    <th>Ativo</th><th>Nome</th><th class="num">Quantidade</th>
+    <th class="num">Preço</th><th class="num">Valor (R$)</th>
+  </tr>
+  {% for linha in visao.posicoes %}
+  <tr>
+    <td>{{ linha.ticker }} {% if linha.vendida %}<span class="etiqueta nao">vendida</span>{% endif %}</td>
+    <td>{{ linha.nome }}</td>
+    <td class="num">{{ linha.quantidade|intcomma }}</td>
+    <td class="num">{% if linha.estrangeira %}US$ {% else %}R$ {% endif %}{{ linha.preco|floatformat:2|intcomma }}</td>
+    <td class="num {% if linha.vendida %}cai{% endif %}">{{ linha.valor|floatformat:2|intcomma }}</td>
+  </tr>
+  {% endfor %}
+</table>
+<p class="sub" style="margin-top:12px">
+  O caixa livre rende CDI todo dia útil. Posições vendidas pagam 0,4% ao mês de
+  aluguel, cobrado diariamente — veja no <a href="{% url 'extrato' %}" style="color:var(--verde)">extrato</a>.
+</p>
+{% else %}
+<p class="vazio">Nenhuma posição aberta. O capital está 100% em caixa, rendendo CDI.</p>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if ultimos %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+{{ comparado|json_script:"dados-comparado" }}
+<script>
+  const comparado = JSON.parse(document.getElementById("dados-comparado").textContent);
+  const cores = { fundo: "#32CD32", cdi: "#8b93a7", ibov: "#4da6ff", sp: "#ffb84d" };
+  const indice = Object.fromEntries(comparado.series.map((s, i) => [s.chave, i]));
+
+  const grafico = new Chart(document.getElementById("grafico-comparado"), {
+    type: "line",
+    data: {
+      labels: comparado.datas,
+      datasets: comparado.series.map((s) => ({
+        label: s.nome,
+        data: s.valores,
+        borderColor: cores[s.chave],
+        backgroundColor: cores[s.chave],
+        borderWidth: s.chave === "fundo" ? 3 : 2,
+        borderDash: s.chave === "cdi" ? [5, 4] : [],
+        tension: 0.2,
+        pointRadius: 0,
+        spanGaps: false,
+        // A cota e o CDI abrem visíveis; as outras abas entram por clique.
+        hidden: s.chave === "ibov" || s.chave === "sp",
+      })),
+    },
+    options: {
+      responsive: true,
+      interaction: { mode: "index", intersect: false },
+      plugins: { legend: { labels: { color: "#e6e6e6", usePointStyle: true, boxWidth: 8 } } },
+      scales: {
+        x: { ticks: { color: "#8b93a7" }, grid: { color: "#262c3a" } },
+        y: { ticks: { color: "#8b93a7" }, grid: { color: "#262c3a" } },
+      },
+    },
+  });
+
+  // Aba = liga/desliga um dataset no MESMO gráfico. Três canvas em divs
+  // escondidas renderizariam com tamanho zero — é o bug clássico do Chart.js.
+  document.querySelectorAll(".aba").forEach((botao) => {
+    botao.addEventListener("click", () => {
+      const i = indice[botao.dataset.serie];
+      const visivel = grafico.isDatasetVisible(i);
+      grafico.setDatasetVisibility(i, !visivel);
+      botao.classList.toggle("ativa", !visivel);
+      grafico.update();
+    });
+  });
+</script>
+{% endif %}
+{% endblock %}

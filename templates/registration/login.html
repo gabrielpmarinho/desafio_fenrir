@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block titulo %}Entrar{% endblock %}
+{% block conteudo %}
+<div style="max-width:380px;margin:60px auto">
+  <h1>Terminal Fenrir</h1>
+  <p class="sub">Acesso restrito aos gestores inscritos.</p>
+  {% if form.errors %}<div class="aviso ruim">Usuário ou senha incorretos.</div>{% endif %}
+  <form class="boleta" method="post">
+    {% csrf_token %}
+    <label for="id_username">Usuário</label>{{ form.username }}
+    <label for="id_password">Senha</label>{{ form.password }}
+    <button type="submit">Entrar</button>
+  </form>
+</div>
+{% endblock %}

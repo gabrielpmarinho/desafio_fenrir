@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% load humanize %}
+{% block titulo %}Ordens{% endblock %}
+{% block conteudo %}
+<h1>Mesa de Ordens</h1>
+<p class="sub">
+  Ordens são enviadas só aos finais de semana e liquidadas na segunda,
+  ao preço de fechamento da própria segunda (regulamento §4.1).
+</p>
+
+{% if janela_aberta %}
+  <form class="boleta" method="post">
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="aviso ruim">{{ form.non_field_errors }}</div>{% endif %}
+    <label for="{{ form.ticker.id_for_label }}">Ativo</label>{{ form.ticker }}
+    <label for="{{ form.direcao.id_for_label }}">Operação</label>{{ form.direcao }}
+    <label for="{{ form.quantidade.id_for_label }}">Quantidade</label>{{ form.quantidade }}
+    {% if form.quantidade.errors %}<ul class="erros">{% for e in form.quantidade.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+    <button type="submit">Enviar boleta</button>
+  </form>
+{% else %}
+  <div class="aviso ruim">
+    <strong>Janela fechada.</strong> O envio de ordens abre no sábado e fecha no
+    domingo. {% if pendentes %}Você tem {{ pendentes }} boleta(s) aguardando liquidação.{% endif %}
+  </div>
+{% endif %}
+
+<h2>Suas boletas</h2>
+{% if ordens %}
+<table>
+  <tr><th>Enviada</th><th>Operação</th><th>Ativo</th><th class="num">Quantidade</th><th>Status</th></tr>
+  {% for ordem in ordens %}
+  <tr>
+    <td>{{ ordem.enviada_em|date:"d/m/Y H:i" }}</td>
+    <td>{{ ordem.get_direcao_display }}</td>
+    <td>{{ ordem.ticker }}</td>
+    <td class="num">{{ ordem.quantidade|intcomma }}</td>
+    <td>
+      {% if ordem.status == "EXECUTADA" %}<span class="etiqueta ok">executada</span>
+      {% elif ordem.status == "REJEITADA" %}<span class="etiqueta nao">rejeitada</span>
+        <div class="sub" style="margin:6px 0 0;font-size:12px">{{ ordem.motivo_rejeicao }}</div>
+      {% elif ordem.status == "CANCELADA" %}<span class="etiqueta cancelada">cancelada</span>
+      {% else %}<span class="etiqueta">pendente</span>
+        <form method="post" action="{% url 'cancelar_ordem' ordem.id %}" style="display:inline">
+          {% csrf_token %}
+          <button type="submit" class="discreto">cancelar</button>
+        </form>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p class="vazio">Nenhuma boleta enviada ainda.</p>
+{% endif %}
+{% endblock %}

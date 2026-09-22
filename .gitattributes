@@ -1,0 +1,5 @@
+# Normaliza fim de linha: o projeto é escrito no Windows e roda em Linux.
+* text=auto eol=lf
+*.png binary
+*.xlsx binary
+*.sqlite3 binary

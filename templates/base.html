@@ -1,0 +1,109 @@
+{% load humanize %}<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block titulo %}Terminal Fenrir{% endblock %} | LIMFIE</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --verde: #32CD32; --preto: #111; --fundo: #0e1117; --painel: #1a1f2b;
+    --texto: #e6e6e6; --apagado: #8b93a7; --borda: #262c3a; --vermelho: #ff4d4d;
+    --atencao: #ffb84d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--fundo); color: var(--texto);
+    font-family: Montserrat, system-ui, sans-serif; font-size: 14px;
+  }
+  a { color: inherit; text-decoration: none; }
+  .topo {
+    background: var(--preto); padding: 12px 24px; display: flex;
+    align-items: center; gap: 24px; flex-wrap: wrap;
+  }
+  .logo { color: var(--verde); font-weight: 700; font-style: italic; font-size: 20px; letter-spacing: 1px; }
+  .menu { color: var(--apagado); margin-right: 16px; }
+  .menu.ativo, .menu:hover { color: #fff; font-weight: 600; }
+  .usuario { margin-left: auto; color: var(--apagado); font-size: 13px; }
+  .conteudo { max-width: 1100px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  h2 { font-size: 17px; margin: 32px 0 12px; }
+  .sub { color: var(--apagado); margin: 0 0 24px; }
+  .cartoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+  .cartao { background: var(--painel); border: 1px solid var(--borda); border-left: 3px solid var(--verde); border-radius: 6px; padding: 14px 16px; }
+  .cartao .rotulo { color: var(--apagado); font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
+  .cartao .valor { font-size: 21px; font-weight: 600; margin-top: 6px; }
+  table { width: 100%; border-collapse: collapse; background: var(--painel); border-radius: 6px; overflow: hidden; }
+  th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--apagado); padding: 12px; border-bottom: 2px solid var(--verde); }
+  td { padding: 12px; border-bottom: 1px solid var(--borda); }
+  tr:last-child td { border-bottom: none; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .sobe { color: var(--verde); } .cai { color: var(--vermelho); }
+  .etiqueta { font-size: 11px; padding: 3px 8px; border-radius: 10px; border: 1px solid var(--borda); }
+  .etiqueta.ok { color: var(--verde); border-color: var(--verde); }
+  .etiqueta.nao { color: var(--vermelho); border-color: var(--vermelho); }
+  .etiqueta.cancelada { color: var(--apagado); border-color: var(--apagado); text-decoration: line-through; }
+  button.discreto {
+    margin: 0 0 0 8px; width: auto; padding: 3px 10px; background: none;
+    color: var(--apagado); border: 1px solid var(--borda); border-radius: 10px;
+    font-size: 11px; font-weight: 400;
+  }
+  button.discreto:hover { color: var(--vermelho); border-color: var(--vermelho); }
+  .mural { border-left-color: var(--atencao); margin-bottom: 24px; }
+  .mural h3 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .5px; color: var(--atencao); }
+  .mural .item { padding: 10px 0; border-top: 1px solid var(--borda); }
+  .mural .item:first-of-type { border-top: 0; padding-top: 0; }
+  .mural .quando { color: var(--apagado); font-size: 12px; }
+  .abas-grafico { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .aba {
+    margin: 0; width: auto; padding: 5px 12px; background: none; color: var(--apagado);
+    border: 1px solid var(--borda); border-radius: 14px; font-size: 12px; font-weight: 600;
+  }
+  .aba.ativa { color: var(--verde); border-color: var(--verde); }
+  .painel-grafico { background: var(--painel); border: 1px solid var(--borda); border-radius: 6px; padding: 18px; }
+  form.boleta { background: var(--painel); border: 1px solid var(--borda); border-radius: 6px; padding: 20px; max-width: 560px; }
+  label { display: block; margin: 14px 0 6px; color: var(--apagado); font-size: 13px; }
+  select, input[type=number], input[type=text], input[type=password] {
+    width: 100%; padding: 10px; background: var(--fundo); color: var(--texto);
+    border: 1px solid var(--borda); border-radius: 4px; font-family: inherit; font-size: 14px;
+  }
+  button { margin-top: 20px; width: 100%; padding: 12px; background: var(--verde); color: #08120a;
+    border: 0; border-radius: 4px; font-weight: 700; font-family: inherit; font-size: 14px; cursor: pointer; }
+  .aviso { border-radius: 6px; padding: 14px 16px; margin-bottom: 20px; border: 1px solid var(--borda); background: var(--painel); }
+  .aviso.bom { border-left: 3px solid var(--verde); }
+  .aviso.ruim { border-left: 3px solid var(--vermelho); }
+  .vazio { color: var(--apagado); padding: 24px 0; }
+  .rodape { text-align: center; color: var(--apagado); font-size: 12px; padding: 24px; }
+  ul.erros { color: var(--vermelho); padding-left: 18px; margin: 8px 0 0; }
+</style>
+</head>
+<body>
+<div class="topo">
+  <span class="logo">LIMFIE</span>
+  {% if user.is_authenticated %}
+    <nav>
+      <a class="menu {% if request.resolver_match.url_name == 'dashboard' %}ativo{% endif %}" href="{% url 'dashboard' %}">Carteira</a>
+      <a class="menu {% if request.resolver_match.url_name == 'ordens' %}ativo{% endif %}" href="{% url 'ordens' %}">Ordens</a>
+      <a class="menu {% if request.resolver_match.url_name == 'extrato' %}ativo{% endif %}" href="{% url 'extrato' %}">Extrato</a>
+      <a class="menu {% if request.resolver_match.url_name == 'ranking' %}ativo{% endif %}" href="{% url 'ranking' %}">Ranking</a>
+    </nav>
+    <span class="usuario">
+      {{ user.get_username }}
+      <form action="{% url 'logout' %}" method="post" style="display:inline">
+        {% csrf_token %}<button type="submit" style="width:auto;background:none;color:var(--apagado);padding:0 0 0 12px;margin:0;font-weight:400;cursor:pointer">sair</button>
+      </form>
+    </span>
+  {% endif %}
+</div>
+
+<div class="conteudo">
+  {% for mensagem in messages %}
+    <div class="aviso {% if mensagem.tags == 'error' %}ruim{% else %}bom{% endif %}">{{ mensagem }}</div>
+  {% endfor %}
+  {% block conteudo %}{% endblock %}
+</div>
+
+<div class="rodape">Desafio Fenrir · LIMFIE UFRJ · desafio@limfie.ufrj.br</div>
+{% block scripts %}{% endblock %}
+</body>
+</html>

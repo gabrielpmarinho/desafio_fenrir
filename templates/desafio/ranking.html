@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% load humanize %}
+{% block titulo %}Ranking{% endblock %}
+{% block conteudo %}
+<h1>Ranking</h1>
+<p class="sub">
+  Foto semanal: o ranking e a comparação entre fundos mudam no fechamento da
+  sexta-feira. Sua própria cota continua sendo apurada todo dia útil — veja na
+  <a href="{% url 'dashboard' %}" style="color:var(--verde)">carteira</a>.
+</p>
+
+{% if linhas %}
+<div class="painel-grafico">
+  <canvas id="grafico" height="110"></canvas>
+  <p class="sub" style="margin:12px 0 0;font-size:12px">
+    Um ponto por semana. Todos os fundos partem de 100 no início do desafio.
+  </p>
+</div>
+
+<h2>Fechamento de {{ data_ranking|date:"d/m/Y" }}</h2>
+<table>
+  <tr><th>#</th><th>Fundo</th><th class="num">Cota</th><th class="num">Patrimônio (R$)</th></tr>
+  {% for linha in linhas %}
+  <tr {% if linha.fundo_id == fundo.id %}style="background:rgba(50,205,50,.07)"{% endif %}>
+    <td>{{ forloop.counter }}º</td>
+    <td>{{ linha.fundo.nome }}{% if linha.fundo_id == fundo.id %} <span class="etiqueta ok">seu fundo</span>{% endif %}</td>
+    <td class="num">{{ linha.cota|floatformat:2 }}</td>
+    <td class="num">{{ linha.patrimonio|floatformat:2|intcomma }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p class="vazio">O ranking aparece depois do primeiro fechamento.</p>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if linhas %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+{{ grafico|json_script:"dados-grafico" }}
+<script>
+  const dados = JSON.parse(document.getElementById("dados-grafico").textContent);
+  const cores = ["#32CD32","#4da6ff","#ffb84d","#ff6b6b","#b980ff","#4dd6c1","#ff8fc7","#c9d14d"];
+  new Chart(document.getElementById("grafico"), {
+    type: "line",
+    data: {
+      labels: dados.datas,
+      datasets: dados.series.map((s, i) => ({
+        label: s.nome, data: s.cotas, borderColor: cores[i % cores.length],
+        backgroundColor: cores[i % cores.length], tension: 0.2, pointRadius: 2, borderWidth: 2,
+      })),
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { labels: { color: "#e6e6e6", usePointStyle: true, boxWidth: 8 } } },
+      scales: {
+        x: { ticks: { color: "#8b93a7" }, grid: { color: "#262c3a" } },
+        y: { ticks: { color: "#8b93a7" }, grid: { color: "#262c3a" } },
+      },
+    },
+  });
+</script>
+{% endif %}
+{% endblock %}
