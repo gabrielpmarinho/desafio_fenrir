@@ -1,0 +1,33 @@
+# Confere se Yahoo (yfinance) e BCB respondem a partir do GitHub Actions.
+# É o pré-requisito do deploy gratuito: a rotina diária vai rodar daqui.
+# Roda o `puxar_precos` de verdade, num SQLite descartável do próprio runner.
+name: Teste das fontes de preço
+
+on:
+  workflow_dispatch:
+    inputs:
+      data:
+        description: "Dia útil AAAA-MM-DD (vazio: último dia útil)"
+        required: false
+
+jobs:
+  puxar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: puxar_precos
+        env:
+          DATA: ${{ inputs.data }}
+        run: |
+          python manage.py migrate --verbosity 0
+          if [ -z "$DATA" ]; then
+            DATA=$(python -c "from datetime import date, timedelta; from core.calendario import dia_util_anterior; print(dia_util_anterior(date.today() - timedelta(days=1)))")
+          fi
+          echo "Dia: $DATA"
+          python manage.py puxar_precos --data "$DATA" | tee saida.txt
+          if grep -q "Sem preço para" saida.txt; then exit 1; fi
