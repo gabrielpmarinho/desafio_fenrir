@@ -39,8 +39,8 @@ telas com conteúdo de verdade antes de encostar em qualquer coisa.
 (`MANUAL_ADMIN.md` §3.3).
 
 **O que você herda junto:** a lista *A fazer* logo abaixo é real e priorizada —
-os dois primeiros itens (agendamento e deploy) são o que separa o sistema de
-rodar sozinho. Nada ali é dívida escondida; está tudo escrito.
+o primeiro item (subir o deploy, já decidido e preparado) é o que separa o
+sistema de rodar sozinho. Nada ali é dívida escondida; está tudo escrito.
 
 ### Decisões que parecem estranhas e não são
 
@@ -74,10 +74,10 @@ caro para serem descobertas:
 | Mural de avisos da Diretoria | ✅ model + admin, aparece na carteira |
 | Gráfico da cota contra CDI/IBOV/S&P | ✅ base 100, com abas |
 | Ranking semanal | ✅ congela no fechamento da sexta |
-| Agendamento dos comandos | ⬜ a fazer |
-| Deploy | ⬜ a fazer |
+| Rotina diária (`rotina_diaria`) | ✅ Agendador do Windows no PC; GitHub Actions em produção |
+| Deploy | 🟨 decidido e preparado (Render + Neon + GitHub Actions); falta criar as contas |
 
-Testes: **47** no motor (pytest) + **33** de integração (Django).
+Testes: **47** no motor (pytest) + **43** de integração (Django).
 
 ## Arquitetura
 
@@ -113,12 +113,11 @@ Lista viva — o que sai daqui vai para o registro no fim do arquivo.
 
 | # | Item | Observação |
 |---|---|---|
-| 1 | **Deploy** | **O código está pronto para produção** (ver registro de 2026-10-01, tarde); falta **onde hospedar**. A liga não tem caixa, então a decisão está com a gestão. Levantamento de 01/10/2026 (condições mudam, reconferir): **PythonAnywhere grátis** não acessa o Yahoo (confirmado pelo Gabriel), conta nova sem tarefa agendada desde jan/2026 e renovação mensal; **Render grátis** dorme após 15 min e apaga o disco (SQLite não serve), Postgres deles expira em 30 dias; **Neon grátis** é Postgres que não expira (0,5 GB); **Oracle Always Free** e **Google e2-micro** são VMs grátis que pedem cartão e alguém que administre Linux; **Azure for Students** dá US$100 (acaba); o crédito DigitalOcean do Student Pack terminou em 31/07/2026; **servidor UFRJ/IE**, perguntar. **Recomendação: Render (site) + Neon (banco) + GitHub Actions (coleta de preços e disparo da rotina por um endpoint autenticado)**, custo zero e sem Linux; alternativa: PythonAnywhere grátis + o mesmo coletor. Primeiro teste em qualquer caso: o Yahoo responder ao GitHub Actions. |
-| 2 | **CDI do BCB** | Hoje é taxa diária constante. Se o desafio passar de 3 meses, puxar a série do BCB (**série 12** — a 11 é Selic). |
-| 3 | **Regulamento desatualizado** | Preço de execução, cota diária e aluguel de short já estão no código, mas não no texto do `REGULAMENTO.md`. |
-| 4 | **Integração de preços sem teste** | `desafio/servicos/precos.py` fala com yfinance e BCB e não tem teste — nem com rede, nem com resposta gravada. Vale agora também para `puxar_benchmarks`. |
-| 5 | **Licença do repositório** | Sem `LICENSE`, o código é "todos os direitos reservados" por padrão — nem outro membro da liga pode reusar legalmente. Decisão da diretoria; MIT é o usual em projeto acadêmico. |
-| 6 | **Primeira semana do desafio** | Antes da primeira sexta, o ranking mostra a apuração mais recente (recuo do `data_do_ranking`). Decidir se a tela deve avisar que aquela foto ainda é parcial. |
+| 1 | **Subir o deploy** | Host **decidido em 19/10/2026: Render (site) + Neon (banco) + GitHub Actions (rotina e backup)**, tudo grátis. Código e configuração prontos (`render.yaml`, `.github/workflows/rotina_diaria.yml`). Falta o que só o dono das contas faz: criar Neon e Render, cadastrar os segredos no GitHub e o superusuário — passo a passo em `MANUAL_ADMIN.md` §8. Plano B pago no mesmo lugar. |
+| 2 | **CDI no motor** | O motor rende todo o histórico de caixa com **uma** taxa diária (a do dia da apuração). Enquanto o Copom não muda a Selic, dá no mesmo; se mudar no meio do desafio, o rendimento passado é recalculado com a taxa nova. Corrigir para render cada dia com o CDI daquele dia (**série 12** — a 11 é Selic). Desde out/2026 a API SGS do BCB devolve página de erro (de qualquer lugar); o CDI entra pelo admin. Vale achar uma fonte alternativa. |
+| 3 | **Integração de preços sem teste** | `desafio/servicos/precos.py` fala com yfinance e BCB e não tem teste unitário — nem com rede, nem com resposta gravada. Existe só o teste de fumaça manual `teste_fontes.yml` no GitHub Actions. |
+| 4 | **Licença do repositório** | Sem `LICENSE`, o código é "todos os direitos reservados" por padrão — nem outro membro da liga pode reusar legalmente. Decisão da diretoria; MIT é o usual em projeto acadêmico. |
+| 5 | **Primeira semana do desafio** | Antes da primeira sexta, o ranking mostra a apuração mais recente (recuo do `data_do_ranking`). Decidir se a tela deve avisar que aquela foto ainda é parcial. |
 
 ## Configuração
 
@@ -133,8 +132,12 @@ Nada de segredo em arquivo versionado. Tudo vem do ambiente:
 | `DATABASE_URL` | SQLite em `db.sqlite3` | Banco do host, ex. `postgres://usuario:senha@host:5432/fenrir`. Tem senha: só no ambiente. |
 | `DJANGO_SSL_REDIRECT` | `1` | Com `DEBUG=0`, manda HTTP para HTTPS. `0` só se o host já fizer isso e der loop. |
 | `DJANGO_HSTS_SECONDS` | `0` | HSTS desligado até o HTTPS estar estável no domínio definitivo; depois, `31536000`. O navegador memoriza a regra, por isso não se liga no primeiro dia. |
+| `RENDER_EXTERNAL_HOSTNAME` | — | Definida pelo próprio Render; o endereço entra sozinho em `ALLOWED_HOSTS` e `CSRF_TRUSTED_ORIGINS`. |
 
-Subindo em produção (qualquer host): definir as variáveis acima com `DJANGO_DEBUG=0`, depois
+**Produção oficial: Render + Neon + GitHub Actions**, passo a passo em `MANUAL_ADMIN.md` §8.
+O `render.yaml` já define build, start e variáveis.
+
+Subindo em outro host: definir as variáveis acima com `DJANGO_DEBUG=0`, depois
 `pip install -r requirements.txt` → `python manage.py migrate` → `python manage.py collectstatic --noinput`
 → `python manage.py createsuperuser` → `python manage.py check --deploy` (o único aviso aceitável é o
 HSTS enquanto `DJANGO_HSTS_SECONDS=0`). Servidor web: `gunicorn config.wsgi` (ou o WSGI do próprio
@@ -186,11 +189,11 @@ fora do horário de verão de lá).
   ```
   Remover: `schtasks /Delete /TN "Fenrir rotina diaria" /F`. Só roda com o PC ligado; o dia
   perdido é recuperado na execução seguinte.
-- *Servidor Linux (depois do deploy, item 1):* no `crontab -e`,
-  ```
-  CRON_TZ=America/Sao_Paulo
-  0 21 * * * cd /srv/fenrir && .venv/bin/python manage.py rotina_diaria >> logs/rotina.log 2>&1
-  ```
+- *Produção (GitHub Actions):* o workflow `.github/workflows/rotina_diaria.yml` roda às
+  **19h30 de Brasília** (22h30 UTC) contra o banco do Neon e guarda um backup cifrado.
+  Mais cedo que no PC de propósito: o agendador do GitHub atrasa às vezes, e a rotina
+  precisa terminar antes da meia-noite, senão `date.today()` vira o dia seguinte. Para
+  reprocessar: *Actions → Rotina diária → Run workflow*, com o campo `desde`.
 
 Os comandos avulsos continuam valendo para correção e conferência:
 
@@ -207,6 +210,51 @@ Mantido a pedido do Gabriel (21/09/2026) para que o contexto não se perca entre
 Desde 22/09/2026 o projeto também está sob git: o `git log` conta o que mudou linha a
 linha, e este registro conta **por quê** — as duas coisas se completam, nenhuma substitui
 a outra.
+
+### 2026-10-19 — host decidido, deploy preparado, documentação acertada
+
+- **Commit atrasado:** o trabalho das três sessões de 01/10 ainda não estava no git. Foi
+  commitado e enviado (`f8d1116`), a pedido do Gabriel.
+- **Host decidido (antigo item 1, agora "subir o deploy"):** a gestão pediu a melhor opção
+  grátis, aberta a qualquer pessoa, com teto de R$ 30–50/mês se o grátis não servisse. Ficou
+  **Render (site) + Neon (banco) + GitHub Actions (rotina e backup)**. Condições conferidas hoje:
+  - Render Free: dorme após 15 min sem acesso (~1 min para acordar), 750 h/mês; o Postgres
+    grátis deles **expira em 30 dias** e não tem plano grátis de cron, por isso só o site fica lá.
+  - Neon Free: Postgres permanente, sem cartão, 1 GB, 100 CU-h/mês, dorme após 5 min.
+  - GitHub Actions: ilimitado em repositório público. Era a dúvida que decidia tudo, e foi
+    **testada**: o workflow manual `teste_fontes.yml` rodou o `puxar_precos` real num runner e
+    o Yahoo entregou os 30 preços, os 2 índices e o dólar de 16/10.
+  - Descartados: PythonAnywhere grátis (sem acesso ao Yahoo, sem tarefa agendada), VMs
+    grátis da Oracle/Google (pedem cartão e alguém que administre Linux).
+  - **Plano B pago:** PythonAnywhere Developer, US$ 10/mês ou US$ 100/ano (~R$ 43/mês), com
+    tudo num lugar só. O plano de US$ 5 de antes não existe mais.
+- **Preparado para o deploy:** `render.yaml` (blueprint), `settings.py` lê
+  `RENDER_EXTERNAL_HOSTNAME`, e o workflow `rotina_diaria.yml` roda às 19h30 com `TZ` de
+  Brasília (sem isso `date.today()` adiantaria um dia), salva um backup `dumpdata` **cifrado**
+  (artefato de repositório público é baixável por qualquer conta do GitHub) e reabilita a si
+  mesmo, porque o GitHub desliga agendamentos após 60 dias sem atividade. Sem o segredo
+  `DATABASE_URL` ele só avisa, para não mandar e-mail de erro toda noite antes do deploy. O ciclo
+  de backup e restauração (dumpdata → gpg → loaddata) foi testado no banco de demonstração e as
+  contagens bateram. Passo a passo em `MANUAL_ADMIN.md` §8.
+- **A API do BCB está quebrada:** toda consulta ao SGS (séries 11, 12 e 4389, com ou sem
+  intervalo de datas) devolve, depois de ~30 s, uma página "Requisição inválida!" com status
+  200. Falha do GitHub **e** do PC; o último CDI gravado no banco local é de 01/10. O código já
+  tratava isso (usa o último CDI gravado). O CDI passa a entrar pelo admin quando o Copom mudar a
+  taxa; a fórmula está no manual.
+- **Inconsistências corrigidas:**
+  - o item "Regulamento desatualizado" saiu: o `REGULAMENTO.md` já cobria preço de execução
+    (§4.1), cota diária (§3.4) e aluguel (§4.3);
+  - *Estado atual* marcava o agendamento como "a fazer" e dizia 33 testes de integração (são 43);
+  - o `MANUAL_ADMIN.md` dizia 43 testes no motor (são 47) e ainda tratava o deploy como "a
+    definir".
+- O item 2 (CDI) foi reescrito: o problema real é o motor render todo o histórico de caixa com
+  uma taxa só.
+- **Banco local** atualizado com `rotina_diaria --desde 2026-10-02` até 16/10. O 19/10 falhou
+  porque a rotina rodou de manhã, antes do fechamento, como esperado.
+- Testes: 47 + 43, verdes. `check --deploy` com ambiente de Render só avisa do HSTS.
+
+**Pendente aqui:** o Gabriel criar as contas e seguir o `MANUAL_ADMIN.md` §8. Depois, rodar o
+workflow à mão uma vez e conferir o site.
 
 ### 2026-10-01 (noite) — tickers trocados na whitelist (antigo item 7)
 
@@ -356,6 +404,8 @@ desafio/       app Django               models · admin · views · forms · ada
 config/        settings · urls · asgi/wsgi
 templates/     base + dashboard · ordens · extrato · ranking · login
 agendamento/   rotina_diaria.bat (Agendador do Windows; log em logs/)
+.github/       workflows: rotina_diaria (produção) · teste_fontes (Yahoo/BCB, manual)
+render.yaml    blueprint do site no Render
 tests/         test_engine · test_custos · test_metricas · test_calendario   (motor)
 desafio/tests.py                                                            (integração)
 ```

@@ -1,0 +1,96 @@
+# Rotina diária da Mesa em produção: o papel que o Agendador do Windows
+# (agendamento/rotina_diaria.bat) faz no PC. Roda `rotina_diaria` contra o banco
+# do Neon e guarda um backup cifrado do banco como artefato do workflow.
+#
+# Segredos do repositório (Settings → Secrets and variables → Actions):
+#   DATABASE_URL  string de conexão do Neon (a mesma colada no Render)
+#   BACKUP_SENHA  senha do backup; sem ela o backup é pulado com aviso
+# Passo a passo em MANUAL_ADMIN.md §8.
+name: Rotina diária
+
+on:
+  schedule:
+    # 22h30 UTC = 19h30 em Brasília: depois do fechamento da B3 e do americano,
+    # com folga para o atraso do agendador do GitHub antes da meia-noite.
+    - cron: "30 22 * * *"
+  workflow_dispatch:
+    inputs:
+      desde:
+        description: "Reprocessar a partir de AAAA-MM-DD (vazio: rotina normal)"
+        required: false
+
+concurrency:
+  group: rotina-diaria
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write  # só para o passo que mantém o agendamento vivo
+
+env:
+  # Sem isto o runner está em UTC e `date.today()` adiantaria um dia à noite.
+  TZ: America/Sao_Paulo
+  DJANGO_DEBUG: "0"
+  DJANGO_SECRET_KEY: rotina-sem-sessao-web  # o comando não usa sessão nem cookie
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+  PYTHONIOENCODING: utf-8
+
+jobs:
+  rotina:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      - name: rotina_diaria
+        env:
+          DESDE: ${{ inputs.desde }}
+        run: |
+          # Antes do deploy o segredo não existe: avisa e sai sem falhar, para
+          # o agendamento não mandar e-mail de erro toda noite.
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::notice::DATABASE_URL não configurado (sem deploy ainda). Nada a fazer."; exit 0
+          fi
+          if [ -n "$DESDE" ]; then
+            python manage.py rotina_diaria --desde "$DESDE"
+          else
+            python manage.py rotina_diaria
+          fi
+
+      # Backup mesmo se a rotina falhou: o que já estava gravado continua valendo.
+      # O repositório é público e artefato de repositório público é baixável por
+      # qualquer conta do GitHub — por isso o arquivo sai cifrado.
+      - name: backup cifrado
+        if: always()
+        env:
+          BACKUP_SENHA: ${{ secrets.BACKUP_SENHA }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then exit 0; fi
+          if [ -z "$BACKUP_SENHA" ]; then
+            echo "::warning::BACKUP_SENHA não configurada; backup pulado."; exit 0
+          fi
+          python manage.py dumpdata --natural-foreign --natural-primary \
+            --exclude contenttypes --exclude auth.permission --exclude sessions \
+            --exclude admin.logentry -o fenrir.json.gz
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$BACKUP_SENHA" \
+            --symmetric --cipher-algo AES256 -o fenrir.json.gz.gpg fenrir.json.gz
+          rm fenrir.json.gz
+      - uses: actions/upload-artifact@v4
+        if: always() && hashFiles('fenrir.json.gz.gpg') != ''
+        with:
+          name: backup-${{ github.run_id }}
+          path: fenrir.json.gz.gpg
+          retention-days: 30
+
+      # O GitHub desliga agendamentos de repositório público após 60 dias sem
+      # atividade. Reabilitar o próprio workflow conta como atividade.
+      - name: manter agendamento vivo
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/rotina_diaria.yml/enable"

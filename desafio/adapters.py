@@ -95,6 +95,7 @@ def taxa_cdi_do_dia(dia: date) -> Decimal:
     )
     if taxa is None:
         raise ValueError(
-            "Nenhuma taxa CDI cadastrada. Rode `manage.py puxar_precos` antes."
+            "Nenhuma taxa CDI cadastrada. Cadastre em Taxas CDI no admin "
+            "(MANUAL_ADMIN.md §8, passo 6)."
         )
     return taxa.taxa_diaria

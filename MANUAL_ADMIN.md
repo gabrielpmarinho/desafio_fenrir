@@ -5,9 +5,9 @@ com o repositório — não guarde senha, chave nem dado de participante aqui.
 Substitui o `Manual_do_Administrador_de_Desafio_FENRIR___LIMFIE.pdf`, que
 descreve a versão antiga (Streamlit + Google Sheets) e **não vale mais**.
 
-> **Status:** motor, banco, Mesa, comandos e telas do participante prontos e
-> testados. Faltam o agendamento dos comandos e o deploy. As seções marcadas
-> com ⬜ descrevem o que ainda não existe.
+> **Status:** motor, banco, Mesa, comandos, telas do participante e rotina
+> diária prontos e testados. O host está decidido (Render + Neon + GitHub
+> Actions, §8); falta criar as contas e subir.
 
 ---
 
@@ -18,9 +18,10 @@ descreve a versão antiga (Streamlit + Google Sheets) e **não vale mais**.
 | `core/` ✅ | Python puro, sem dependências | Toda a economia do desafio |
 | `desafio/` ✅ | Django | Models, Mesa (admin) e comandos |
 | Telas do participante ✅ | Django | Carteira, ordens, extrato, ranking |
-| Banco ✅ | SQLite; outro banco via `DATABASE_URL` | Ledger, fechamentos, cadastro. Cópia diária com `backup_banco` |
+| Banco ✅ | SQLite local; Postgres do Neon em produção (`DATABASE_URL`) | Ledger, fechamentos, cadastro. Cópia diária com `backup_banco` (SQLite) ou artefato cifrado do workflow (Neon) |
 | Preços ✅ | yfinance + API do BCB | Fechamento diário e CDI |
-| Deploy ⬜ | a definir pela gestão | De preferência sem custo (a liga não tem caixa) |
+| Rotina diária ✅ | `rotina_diaria`: Agendador do Windows no PC, GitHub Actions em produção | Puxa preços, liquida, apura |
+| Deploy 🟨 | Render (site) + Neon (banco) + GitHub Actions (rotina), tudo grátis | Decidido em 19/10/2026; falta criar as contas (§8) |
 
 A regra de ouro: **`core/` não importa Django, não acessa rede e não conhece
 banco**. Se você precisar mudar uma regra do desafio, ela está em `core/`, e o
@@ -94,10 +95,16 @@ cobrado 1/20 por dia**. É linear — dobrar a posição dobra o custo.
 
 ## 3. Rotina operacional
 
-**No dia a dia ninguém precisa rodar nada.** O agendador chama, às 21h, o
+**No dia a dia ninguém precisa rodar nada.** O agendador chama o
 `python manage.py rotina_diaria`, que faz 3.1 e 3.2 na ordem certa, só em dia útil,
-e recupera sozinho os dias que ficaram para trás. Como registrar a tarefa está no
-README, seção *Rotina da Mesa*; o log fica em `logs/rotina_AAAA-MM.log`.
+e recupera sozinho os dias que ficaram para trás.
+
+- **Em produção:** o workflow *Rotina diária* do GitHub Actions, às 19h30 de
+  Brasília. O log é o da execução, na aba *Actions* do repositório; falha chega
+  por e-mail ao dono do repositório.
+- **No PC (desenvolvimento):** o Agendador do Windows com
+  `agendamento/rotina_diaria.bat`, às 21h; log em `logs/rotina_AAAA-MM.log`. Como
+  registrar está no README, seção *Rotina da Mesa*.
 
 Os comandos abaixo continuam valendo para conferir (`--simular`), corrigir
 (`--refazer`) ou reprocessar um dia à mão.
@@ -185,8 +192,12 @@ receber uma turma nova exigia editar o arquivo e refazer o deploy.
 | Posição com sinal invertido | Ler o ledger: quantidade positiva é compra, negativa é venda |
 | Aluno não consegue enviar ordem | A janela só abre sábado e domingo (regulamento §4) |
 | Aluno logou e tomou 404 | Usuário sem `Participante` vinculado a um fundo |
+| "CDI indisponível no BCB" no log | Esperado desde out/2026: a API SGS do BCB devolve uma página "Requisição inválida!" depois de ~30 s, de qualquer lugar (testado do GitHub e de um PC no Brasil em 19/10/2026). A rotina usa o último CDI gravado. Quando o Copom mudar a taxa, cadastrar o novo CDI no admin (§8, passo 6) |
+| "Nenhuma taxa CDI cadastrada" | Banco novo sem CDI: cadastrar no admin (§8, passo 6) |
+| Site demora ~1 min para abrir | Render grátis dorme após 15 min sem acesso; o primeiro acesso acorda. Não é erro |
+| Rotina parou de rodar sozinha | Workflow desabilitado (aba *Actions* → *Rotina diária* → *Enable workflow*); depois rodar à mão com `desde` = dia seguinte ao último fechamento |
 
-Antes de mexer em qualquer regra, rode `python -m pytest -q`. São 43 testes e
+Antes de mexer em qualquer regra, rode `python -m pytest -q`. São 47 testes e
 levam menos de um décimo de segundo. Quatro deles reproduzem exatamente os bugs
 que quebraram a versão anterior — se algum falhar, você reintroduziu um deles.
 
@@ -194,12 +205,80 @@ que quebraram a versão anterior — se algum falhar, você reintroduziu um dele
 
 ## 7. Pendências
 
-- [x] ~~Agendamento dos comandos~~ — `rotina_diaria` + `agendamento/rotina_diaria.bat`
-      (falta registrar a tarefa; no servidor, cron depois do deploy)
-- [ ] Deploy — código pronto (`DATABASE_URL`, whitenoise, HTTPS, `backup_banco`);
-      falta a gestão decidir o host, que não pode depender de dinheiro da liga
+- [x] ~~Agendamento dos comandos~~ — `rotina_diaria`; no PC pelo
+      `agendamento/rotina_diaria.bat`, em produção pelo workflow do GitHub Actions
+- [ ] Deploy — host decidido (Render + Neon + GitHub Actions, §8); falta criar
+      as contas e subir
 - [x] ~~Telas do participante~~
 - [x] ~~Regulamento atualizado~~ — ver `REGULAMENTO.md` (versão 2)
 - [x] ~~Comandos operacionais~~
 - [x] ~~Integração de preços e CDI~~ (série 12 do SGS; a versão antiga usava a
-      11, que é Selic)
+      11, que é Selic). Desde out/2026 a API do BCB está falhando; o CDI entra
+      pelo admin (§8, passo 6)
+
+---
+
+## 8. Deploy (Render + Neon + GitHub Actions)
+
+Decidido em 19/10/2026. Tudo no plano gratuito, sem cartão e sem servidor Linux
+para administrar. O motivo de cada escolha está no README (registro de 19/10/2026).
+
+| Peça | Serviço | Plano | O que faz |
+|---|---|---|---|
+| Site | Render | Free | Django + gunicorn em `fenrir-xxxx.onrender.com`, aberto a qualquer um |
+| Banco | Neon | Free | Postgres de 1 GB que não expira |
+| Rotina e backup | GitHub Actions | grátis (repo público) | `rotina_diaria` às 19h30 + backup cifrado |
+
+**Limitações conhecidas, todas aceitáveis para o desafio:**
+- O site dorme após 15 min sem acesso; o primeiro acesso leva ~1 min para acordar.
+- A API do BCB está falhando (não é coisa do host: falha também do Brasil). O CDI
+  entra pelo admin quando o Copom muda a taxa (passo 6); a rotina usa o último
+  CDI gravado.
+- O plano grátis do Render não tem terminal: comandos de manutenção
+  (`createsuperuser`, reprocessamentos) rodam **do seu PC** apontando para o Neon.
+
+### Passo a passo (uma vez só)
+
+1. **Neon** (neon.com, entrar com o GitHub): criar o projeto `fenrir`, região
+   **AWS US East 1 (N. Virginia)**. Copiar a *connection string* **direta** (a sem
+   `-pooler` no host). Ela tem senha: não colar em arquivo nem em chat.
+2. **Render** (render.com, entrar com o GitHub): *New → Blueprint* → repositório
+   `desafio_fenrir`. O Render lê o `render.yaml`, pede o `DATABASE_URL` (colar a
+   string do Neon) e gera a `DJANGO_SECRET_KEY` sozinho. O build já roda o
+   `migrate`. O endereço aparece no painel (`https://fenrir-xxxx.onrender.com`).
+3. **GitHub** → repositório → *Settings → Secrets and variables → Actions*:
+   - `DATABASE_URL`: a mesma string do Neon;
+   - `BACKUP_SENHA`: senha longa, guardada com a diretoria (sem ela o backup
+     não abre).
+4. **Superusuário**, do seu PC, num PowerShell na pasta do projeto:
+   ```powershell
+   $env:DATABASE_URL = "<string do Neon>"
+   python manage.py createsuperuser
+   ```
+   Feche o terminal depois: a variável some com ele.
+5. **Edição**: em `https://<endereço>/admin`, cadastrar fundos e usuários (§4).
+6. **CDI**: no admin, *Taxas CDI → Adicionar*, com a data de hoje e a taxa
+   **diária em fração**: `(1 + CDI anual)^(1/252) − 1`. Ex.: CDI de 13,65% a.a. →
+   `1,1365^(1/252) − 1` = `0.00050788`. Repetir sempre que o Copom mudar a Selic.
+   (Se a API do BCB voltar, a rotina passa a gravar sozinha e este passo vira só
+   conferência.)
+7. **Teste**: aba *Actions* → *Rotina diária* → *Run workflow*. O log deve mostrar
+   preços gravados e a cota de cada fundo.
+
+### Restaurar um backup
+
+Na execução desejada da *Rotina diária*, baixar o artefato `backup-<número>`
+(fica 30 dias), descompactar o zip e, com `DATABASE_URL` apontando para um banco
+vazio e migrado:
+
+```bash
+gpg -d fenrir.json.gz.gpg > fenrir.json.gz   # pede a BACKUP_SENHA
+python manage.py loaddata fenrir.json.gz
+```
+
+### Plano B (pago)
+
+Se o plano grátis não aguentar (Yahoo bloquear o GitHub, Render ou Neon mudarem
+as regras): **PythonAnywhere Developer**, US$ 10/mês ou US$ 100/ano (~R$ 43/mês no
+câmbio de out/2026). Site, banco, internet liberada e tarefa agendada no mesmo
+lugar, sem dormir e sem Linux. Aí volta a valer o `backup_banco` com SQLite.

@@ -1,0 +1,28 @@
+# Blueprint do Render: o site do Terminal Fenrir (plano gratuito).
+# O banco é o Postgres do Neon (DATABASE_URL), não o do Render — o gratuito
+# do Render apaga o banco em 30 dias. A rotina diária roda no GitHub Actions
+# (.github/workflows/rotina_diaria.yml), porque cron não tem plano grátis aqui.
+# Passo a passo em MANUAL_ADMIN.md §8.
+services:
+  - type: web
+    name: fenrir
+    runtime: python
+    plan: free
+    region: virginia  # mesma região do Neon (AWS us-east-1)
+    branch: main
+    # No plano grátis não há "pre-deploy command": a migração roda no build.
+    buildCommand: >-
+      pip install -r requirements.txt &&
+      python manage.py collectstatic --noinput &&
+      python manage.py migrate --noinput
+    startCommand: gunicorn config.wsgi --workers 2 --timeout 60
+    healthCheckPath: /entrar/
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: DJANGO_DEBUG
+        value: "0"
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false  # string do Neon, colada à mão no painel

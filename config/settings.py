@@ -52,6 +52,12 @@ CSRF_TRUSTED_ORIGINS = [
     origem for origem in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if origem
 ]
 
+# No Render o endereço público (fenrir-xxxx.onrender.com) vem nesta variável:
+# entra sozinho nas duas listas, sem ninguém precisar copiá-lo à mão.
+if RENDER_HOST := os.environ.get("RENDER_EXTERNAL_HOSTNAME"):
+    ALLOWED_HOSTS.append(RENDER_HOST)
+    CSRF_TRUSTED_ORIGINS.append(f"https://{RENDER_HOST}")
+
 
 # Application definition
 
