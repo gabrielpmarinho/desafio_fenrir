@@ -14,6 +14,7 @@ import os
 import secrets
 from pathlib import Path
 
+import dj_database_url
 from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -45,6 +46,12 @@ if not SECRET_KEY:
 
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
+# Origens com HTTPS que podem postar formulário (login, boleta). Em produção:
+# "https://fenrir.exemplo.org". Vazio em desenvolvimento.
+CSRF_TRUSTED_ORIGINS = [
+    origem for origem in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if origem
+]
+
 
 # Application definition
 
@@ -61,6 +68,8 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    # Serve o CSS do admin e das telas sem depender de nginx no host.
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -92,11 +101,13 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+# Sem DATABASE_URL, SQLite na raiz do projeto. Com ela, o banco do host
+# (ex.: postgres://usuario:senha@host:5432/fenrir). A URL tem senha: só no ambiente.
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+    "default": dj_database_url.config(
+        default=f"sqlite:///{(BASE_DIR / 'db.sqlite3').as_posix()}",
+        conn_max_age=600,
+    )
 }
 
 
@@ -135,6 +146,19 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'  # destino do `collectstatic`, ignorado pelo git
+
+
+# Produção (DEBUG=0): HTTPS obrigatório e cookies só por HTTPS.
+# O host termina o TLS num proxy e repassa por HTTP com o cabeçalho abaixo.
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SECURE_SSL_REDIRECT = os.environ.get("DJANGO_SSL_REDIRECT", "1") == "1"
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    # HSTS começa desligado: ligar só depois de o HTTPS estar estável no domínio
+    # definitivo (ex.: 31536000), porque o navegador memoriza a regra.
+    SECURE_HSTS_SECONDS = int(os.environ.get("DJANGO_HSTS_SECONDS", "0"))
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field

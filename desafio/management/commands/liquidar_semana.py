@@ -37,8 +37,13 @@ class Command(BaseCommand):
         if not eh_dia_util(dia):
             raise CommandError(f"{dia} não é dia útil — não há preço de fechamento.")
 
+        # Só o que chegou antes do dia de liquidação. Na operação normal é tudo
+        # (a janela é sáb/dom), mas ao recuperar uma segunda atrasada as boletas
+        # do fim de semana seguinte não podem pegar o preço dela.
         pendentes = list(
-            models.Ordem.objects.filter(status=models.Ordem.Status.PENDENTE)
+            models.Ordem.objects.filter(
+                status=models.Ordem.Status.PENDENTE, enviada_em__date__lt=dia
+            )
             .select_related("fundo")
             .order_by("enviada_em")
         )

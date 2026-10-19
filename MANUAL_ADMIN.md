@@ -18,9 +18,9 @@ descreve a versão antiga (Streamlit + Google Sheets) e **não vale mais**.
 | `core/` ✅ | Python puro, sem dependências | Toda a economia do desafio |
 | `desafio/` ✅ | Django | Models, Mesa (admin) e comandos |
 | Telas do participante ✅ | Django | Carteira, ordens, extrato, ranking |
-| Banco ✅ | SQLite (dev) / Postgres (produção) | Ledger, fechamentos, cadastro |
+| Banco ✅ | SQLite; outro banco via `DATABASE_URL` | Ledger, fechamentos, cadastro. Cópia diária com `backup_banco` |
 | Preços ✅ | yfinance + API do BCB | Fechamento diário e CDI |
-| Deploy ⬜ | a definir | Hospedagem paga de baixo custo |
+| Deploy ⬜ | a definir pela gestão | De preferência sem custo (a liga não tem caixa) |
 
 A regra de ouro: **`core/` não importa Django, não acessa rede e não conhece
 banco**. Se você precisar mudar uma regra do desafio, ela está em `core/`, e o
@@ -93,6 +93,14 @@ cobrado 1/20 por dia**. É linear — dobrar a posição dobra o custo.
 ---
 
 ## 3. Rotina operacional
+
+**No dia a dia ninguém precisa rodar nada.** O agendador chama, às 21h, o
+`python manage.py rotina_diaria`, que faz 3.1 e 3.2 na ordem certa, só em dia útil,
+e recupera sozinho os dias que ficaram para trás. Como registrar a tarefa está no
+README, seção *Rotina da Mesa*; o log fica em `logs/rotina_AAAA-MM.log`.
+
+Os comandos abaixo continuam valendo para conferir (`--simular`), corrigir
+(`--refazer`) ou reprocessar um dia à mão.
 
 ### 3.1 Segunda-feira — liquidar as ordens da semana ✅
 
@@ -169,11 +177,11 @@ receber uma turma nova exigia editar o arquivo e refazer o deploy.
 
 | Sintoma | O que verificar |
 |---|---|
-| Cota não mudou hoje | O `fechar_dia` rodou? Era dia útil? O calendário tem esse feriado? |
+| Cota não mudou hoje | O `fechar_dia` rodou? Era dia útil? O calendário tem esse feriado? Veja `logs/rotina_AAAA-MM.log` |
 | Fundo vendido sem custo de aluguel | O `Lancamento` do dia foi persistido no ledger? |
 | Aluguel cobrado em dobro | O `fechar_dia` rodou duas vezes para o mesmo dia |
 | Ordem rejeitada sem motivo claro | A mensagem em `Rejeicao.motivo` traz o número; conferir contra o patrimônio do fundo |
-| Preço faltando no fechamento | yfinance falhou para o ticker; a apuração do dia não pode rodar pela metade |
+| Preço faltando no fechamento | yfinance falhou para o ticker; a apuração do dia não pode rodar pela metade. Se persistir por dias, o código pode ter mudado (ex.: ELET3 → AXIA3 em 2026): atualizar `core/universo.py` e o regulamento |
 | Posição com sinal invertido | Ler o ledger: quantidade positiva é compra, negativa é venda |
 | Aluno não consegue enviar ordem | A janela só abre sábado e domingo (regulamento §4) |
 | Aluno logou e tomou 404 | Usuário sem `Participante` vinculado a um fundo |
@@ -186,8 +194,10 @@ que quebraram a versão anterior — se algum falhar, você reintroduziu um dele
 
 ## 7. Pendências
 
-- [ ] Agendamento dos comandos (cron ou GitHub Actions)
-- [ ] Deploy e banco Postgres
+- [x] ~~Agendamento dos comandos~~ — `rotina_diaria` + `agendamento/rotina_diaria.bat`
+      (falta registrar a tarefa; no servidor, cron depois do deploy)
+- [ ] Deploy — código pronto (`DATABASE_URL`, whitenoise, HTTPS, `backup_banco`);
+      falta a gestão decidir o host, que não pode depender de dinheiro da liga
 - [x] ~~Telas do participante~~
 - [x] ~~Regulamento atualizado~~ — ver `REGULAMENTO.md` (versão 2)
 - [x] ~~Comandos operacionais~~

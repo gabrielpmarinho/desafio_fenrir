@@ -2,6 +2,9 @@ Django>=5.2
 yfinance>=0.2
 requests>=2.31
 psycopg[binary]>=3.1
+dj-database-url>=2.1
+whitenoise>=6.6
+gunicorn>=22.0; platform_system != "Windows"
 
 # desenvolvimento
 pytest>=8.0

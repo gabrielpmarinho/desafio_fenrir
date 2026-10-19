@@ -69,9 +69,10 @@ MCHI (Bolsa da China) · TLT (Títulos EUA 20+ anos) · USO (Petróleo) · GLD (
 (Financeiro EUA)
 
 **Ações disponíveis (B3):** PETR4.SA (Petrobras) · VALE3.SA (Vale) · ITUB4.SA
-(Itaú) · BBAS3.SA (Banco do Brasil) · WEGE3.SA (WEG) · ELET3.SA (Eletrobras) ·
-RENT3.SA (Localiza) · RADL3.SA (Raia Drogasil) · SUZB3.SA (Suzano) · JBSS3.SA
-(JBS) · B3SA3.SA (B3) · ABEV3.SA (Ambev) · MGLU3.SA (Magazine Luiza)
+(Itaú) · BBAS3.SA (Banco do Brasil) · WEGE3.SA (WEG) · AXIA3.SA (Axia, antiga
+Eletrobras) · RENT3.SA (Localiza) · RADL3.SA (Raia Drogasil) · SUZB3.SA (Suzano) ·
+JBSS32.SA (JBS, BDR negociado em reais) · B3SA3.SA (B3) · ABEV3.SA (Ambev) ·
+MGLU3.SA (Magazine Luiza)
 
 ### 3.4. Apuração da Cota
 

@@ -29,6 +29,8 @@ db.sqlite3
 /staticfiles/
 /media/
 local_settings.py
+/logs/
+/backups/
 
 # --- Editor / SO ---
 .vscode/

@@ -11,7 +11,7 @@ O sistema faz três coisas: **recebe as boletas** dos participantes, **liquida e
 apura** as cotas a partir de preços reais de mercado, e **mostra** a carteira, o
 extrato e o ranking. Quem opera isso é a Mesa — a diretoria do desafio.
 
-Django 5.2 + SQLite (Postgres previsto para o deploy), preços via yfinance e CDI
+Django 5.2 + SQLite (outro banco por `DATABASE_URL`), preços via yfinance e CDI
 via API do Banco Central. Sem dependência paga e sem serviço externo além dessas
 duas fontes de dados.
 
@@ -113,13 +113,12 @@ Lista viva — o que sai daqui vai para o registro no fim do arquivo.
 
 | # | Item | Observação |
 |---|---|---|
-| 1 | **Agendamento dos comandos** | `puxar_precos` → `liquidar_semana` (segundas) → `fechar_dia`, nessa ordem, todo dia útil. Falta decidir o mecanismo (Task Scheduler, cron do host, ou um comando único que orquestre). |
-| 2 | **Deploy** | `settings.py` ainda em SQLite e `DEBUG`; `psycopg` já está no `requirements.txt`, então o alvo presumido é Postgres. Falta host, `ALLOWED_HOSTS`, `SECRET_KEY` fora do código e arquivos estáticos. |
-| 3 | **CDI do BCB** | Hoje é taxa diária constante. Se o desafio passar de 3 meses, puxar a série do BCB (**série 12** — a 11 é Selic). |
-| 4 | **Regulamento desatualizado** | Preço de execução, cota diária e aluguel de short já estão no código, mas não no texto do `REGULAMENTO.md`. |
-| 5 | **Integração de preços sem teste** | `desafio/servicos/precos.py` fala com yfinance e BCB e não tem teste — nem com rede, nem com resposta gravada. Vale agora também para `puxar_benchmarks`. |
-| 6 | **Licença do repositório** | Sem `LICENSE`, o código é "todos os direitos reservados" por padrão — nem outro membro da liga pode reusar legalmente. Decisão da diretoria; MIT é o usual em projeto acadêmico. |
-| 7 | **Primeira semana do desafio** | Antes da primeira sexta, o ranking mostra a apuração mais recente (recuo do `data_do_ranking`). Decidir se a tela deve avisar que aquela foto ainda é parcial. |
+| 1 | **Deploy** | **O código está pronto para produção** (ver registro de 2026-10-01, tarde); falta **onde hospedar**. A liga não tem caixa, então a decisão está com a gestão. Levantamento de 01/10/2026 (condições mudam, reconferir): **PythonAnywhere grátis** não acessa o Yahoo (confirmado pelo Gabriel), conta nova sem tarefa agendada desde jan/2026 e renovação mensal; **Render grátis** dorme após 15 min e apaga o disco (SQLite não serve), Postgres deles expira em 30 dias; **Neon grátis** é Postgres que não expira (0,5 GB); **Oracle Always Free** e **Google e2-micro** são VMs grátis que pedem cartão e alguém que administre Linux; **Azure for Students** dá US$100 (acaba); o crédito DigitalOcean do Student Pack terminou em 31/07/2026; **servidor UFRJ/IE**, perguntar. **Recomendação: Render (site) + Neon (banco) + GitHub Actions (coleta de preços e disparo da rotina por um endpoint autenticado)**, custo zero e sem Linux; alternativa: PythonAnywhere grátis + o mesmo coletor. Primeiro teste em qualquer caso: o Yahoo responder ao GitHub Actions. |
+| 2 | **CDI do BCB** | Hoje é taxa diária constante. Se o desafio passar de 3 meses, puxar a série do BCB (**série 12** — a 11 é Selic). |
+| 3 | **Regulamento desatualizado** | Preço de execução, cota diária e aluguel de short já estão no código, mas não no texto do `REGULAMENTO.md`. |
+| 4 | **Integração de preços sem teste** | `desafio/servicos/precos.py` fala com yfinance e BCB e não tem teste — nem com rede, nem com resposta gravada. Vale agora também para `puxar_benchmarks`. |
+| 5 | **Licença do repositório** | Sem `LICENSE`, o código é "todos os direitos reservados" por padrão — nem outro membro da liga pode reusar legalmente. Decisão da diretoria; MIT é o usual em projeto acadêmico. |
+| 6 | **Primeira semana do desafio** | Antes da primeira sexta, o ranking mostra a apuração mais recente (recuo do `data_do_ranking`). Decidir se a tela deve avisar que aquela foto ainda é parcial. |
 
 ## Configuração
 
@@ -130,6 +129,16 @@ Nada de segredo em arquivo versionado. Tudo vem do ambiente:
 | `DJANGO_SECRET_KEY` | — | Obrigatória fora de desenvolvimento. Em `DEBUG`, o projeto gera uma na primeira execução e guarda em `.secret_key` (ignorado pelo git). |
 | `DJANGO_DEBUG` | `1` | `0` em produção. Com `0` e sem `DJANGO_SECRET_KEY`, o servidor se recusa a subir. |
 | `DJANGO_ALLOWED_HOSTS` | `localhost,127.0.0.1` | Lista separada por vírgula. |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | vazio | Em produção, o endereço com `https://` (ex. `https://fenrir.exemplo.org`). Sem ele, login e boleta dão erro 403. |
+| `DATABASE_URL` | SQLite em `db.sqlite3` | Banco do host, ex. `postgres://usuario:senha@host:5432/fenrir`. Tem senha: só no ambiente. |
+| `DJANGO_SSL_REDIRECT` | `1` | Com `DEBUG=0`, manda HTTP para HTTPS. `0` só se o host já fizer isso e der loop. |
+| `DJANGO_HSTS_SECONDS` | `0` | HSTS desligado até o HTTPS estar estável no domínio definitivo; depois, `31536000`. O navegador memoriza a regra, por isso não se liga no primeiro dia. |
+
+Subindo em produção (qualquer host): definir as variáveis acima com `DJANGO_DEBUG=0`, depois
+`pip install -r requirements.txt` → `python manage.py migrate` → `python manage.py collectstatic --noinput`
+→ `python manage.py createsuperuser` → `python manage.py check --deploy` (o único aviso aceitável é o
+HSTS enquanto `DJANGO_HSTS_SECONDS=0`). Servidor web: `gunicorn config.wsgi` (ou o WSGI do próprio
+host, como no PythonAnywhere). Agendar `rotina_diaria` e, logo depois, `backup_banco`.
 
 ```bash
 git clone git@github.com:gabrielpmarinho/desafio_fenrir.git
@@ -151,13 +160,45 @@ python manage.py test desafio  # integração (banco + comandos)
 
 ## Rotina da Mesa
 
+Um comando só faz o dia inteiro, e é ele que o agendador chama:
+
 ```bash
-python manage.py puxar_precos --data 2026-10-05     # todo dia útil, após o fechamento
-python manage.py liquidar_semana --data 2026-10-05  # segundas, depois do puxar_precos
-python manage.py fechar_dia --data 2026-10-05       # todo dia útil, por último
+python manage.py rotina_diaria                    # hoje
+python manage.py rotina_diaria --data 2026-10-05  # um dia específico
+python manage.py rotina_diaria --desde 2026-10-01 # reprocessa um intervalo
 ```
 
-Use `--simular` em `liquidar_semana` para ver o resultado sem gravar.
+Para cada dia útil pendente ele roda `puxar_precos` → `liquidar_semana` (só no 1º dia útil
+da semana, regulamento §2.1) → `fechar_dia`. Em dia não útil não faz nada, então pode ser
+agendado de segunda a domingo. **Recupera dias perdidos:** se o PC ficou desligado, a próxima
+execução apura os dias úteis desde o último fechamento, em ordem (teto de 10 dias úteis;
+acima disso para e pede `--desde`, porque é sinal de problema maior). Erro em qualquer etapa
+interrompe e sai com código 1; o que já foi gravado fica, e a próxima execução retoma.
+
+**Agendamento.** Horário: **21h de Brasília**, depois do fechamento americano (18h, ou 19h
+fora do horário de verão de lá).
+
+- *Windows (enquanto não há deploy):* `agendamento/rotina_diaria.bat` roda o comando e anexa a
+  saída em `logs/rotina_AAAA-MM.log` (ignorado pelo git). Para registrar a tarefa, num
+  terminal **cmd**:
+  ```
+  schtasks /Create /SC DAILY /ST 21:00 /TN "Fenrir rotina diaria" /TR "\"C:\GABRIEL\UFRJ ECON\LIMFIE\Fenrir_Terminal\agendamento\rotina_diaria.bat\""
+  ```
+  Remover: `schtasks /Delete /TN "Fenrir rotina diaria" /F`. Só roda com o PC ligado; o dia
+  perdido é recuperado na execução seguinte.
+- *Servidor Linux (depois do deploy, item 1):* no `crontab -e`,
+  ```
+  CRON_TZ=America/Sao_Paulo
+  0 21 * * * cd /srv/fenrir && .venv/bin/python manage.py rotina_diaria >> logs/rotina.log 2>&1
+  ```
+
+Os comandos avulsos continuam valendo para correção e conferência:
+
+```bash
+python manage.py puxar_precos --data 2026-10-05
+python manage.py liquidar_semana --data 2026-10-05 --simular  # vê sem gravar
+python manage.py fechar_dia --data 2026-10-05 --refazer       # reapura um dia
+```
 
 ## Registro de mudanças
 
@@ -166,6 +207,69 @@ Mantido a pedido do Gabriel (21/09/2026) para que o contexto não se perca entre
 Desde 22/09/2026 o projeto também está sob git: o `git log` conta o que mudou linha a
 linha, e este registro conta **por quê** — as duas coisas se completam, nenhuma substitui
 a outra.
+
+### 2026-10-01 (noite) — tickers trocados na whitelist (antigo item 7)
+
+- `ELET3.SA` e `JBSS3.SA` não existem mais no Yahoo. Conferido no yfinance em 01/10/2026:
+  - **`ELET3.SA` → `AXIA3.SA`**: a Eletrobras virou AXIA Energia; ação ordinária, ~13 mi
+    ações/dia.
+  - **`JBSS3.SA` → `JBSS32.SA`**: a JBS N.V. levou a listagem principal para Nova York e na
+    B3 ficou o BDR. Escolha do Gabriel: o BDR, que mantém o papel em reais e na lista de
+    ações B3, como no regulamento (a alternativa era a `JBS` da NYSE, em dólar).
+- Trocados em `core/universo.py`, `REGULAMENTO.md` §3.3 e nos preços-base do `semear_demo`.
+- Banco local: preços dos dois códigos novos completados de 23/09 a 01/10 com `puxar_precos`.
+  Nenhuma ordem nem trade usava os códigos antigos.
+- Testes: 47 + 43, verdes.
+
+**Atenção para o futuro:** código de ação muda (fusão, troca de nome, migração de bolsa). Se o
+log da rotina mostrar `Sem preço para:` em dia útil por mais de um dia seguido, é esse o
+primeiro suspeito.
+
+### 2026-10-01 (tarde) — código pronto para produção; hospedagem em aberto
+
+- **Hospedagem é o gargalo, e não é técnico:** a LIMFIE não gere dinheiro, e até ~R$25/mês
+  sairia do bolso de membros que em geral não trabalham. O Gabriel vai levar a decisão à
+  gestão; as opções gratuitas e a paga mais simples estão no item 1 de *A fazer*.
+- Adiantado o que não depende do host:
+  - `DATABASE_URL` (`dj-database-url`): SQLite por padrão, Postgres/MySQL só trocando a variável.
+  - Arquivos estáticos com `whitenoise` + `STATIC_ROOT` (`staticfiles/`, já ignorado). Antes, com
+    `DEBUG=0`, o site subia sem CSS.
+  - Com `DEBUG=0`: redireciona para HTTPS, cookies seguros, `SECURE_PROXY_SSL_HEADER`,
+    `DJANGO_CSRF_TRUSTED_ORIGINS`; HSTS por variável, desligado de início.
+  - `gunicorn` no `requirements.txt` (fora do Windows, onde não roda).
+  - **Novo comando `backup_banco`**: cópia consistente do SQLite (API de backup, segura com o
+    site no ar) em `backups/` (ignorado), guardando as 14 mais recentes. O `.bat` da rotina já
+    chama depois do `rotina_diaria`. Com Postgres o comando recusa e manda usar o backup do
+    provedor.
+- Validado com `DEBUG=0`: `check --deploy` só com o aviso de HSTS (intencional), `collectstatic`
+  com 127 arquivos, CSS do admin servido (200), HTTP → HTTPS (301), host desconhecido recusado
+  (400). Testes: 47 + 43, verdes.
+
+**Pendente aqui:** escolher o host (gestão). Depois disso: subir, testar `puxar_precos` no
+servidor, agendar `rotina_diaria` + `backup_banco`, e só então ligar o HSTS.
+
+### 2026-10-01 — agendamento da rotina diária (antigo item 1)
+
+- **Novo comando `rotina_diaria`**, que orquestra `puxar_precos` → `liquidar_semana`
+  (1º dia útil da semana) → `fechar_dia` e recupera dias perdidos (ver *Rotina da Mesa*).
+  Escolha do Gabriel: um comando único + script pronto, **sem registrar tarefa no sistema**.
+  O mesmo comando serve para o Agendador do Windows agora e para o cron do servidor depois do
+  deploy; só muda quem dispara.
+- **`liquidar_semana` só pega boleta enviada antes do dia de liquidação**
+  (`enviada_em__date__lt=dia`). Sem isso, recuperar uma segunda atrasada liquidaria ao preço
+  dela as boletas do fim de semana seguinte. Na operação normal nada muda (janela sáb/dom).
+- Testes: `_boleta` agora fixa `enviada_em` num sábado (03/10/2026). Antes dependia da data
+  real e passaria a falhar a partir de 05/10/2026 com o filtro novo. +9 testes
+  (`TestRotinaDiaria` e boleta do próprio dia): 47 do motor + 42 de integração, todos verdes.
+- `agendamento/rotina_diaria.bat` (log em `logs/`, no `.gitignore`); `.gitattributes`
+  mantém `.bat` em CRLF, porque o `eol=lf` geral pode quebrar o script no Windows.
+- Teste de fumaça do `.bat` no banco **local** de demonstração: recuperou 7 dias úteis
+  (23/09 a 01/10/2026) com preços reais do yfinance/BCB. Revelou `ELET3.SA` e `JBSS3.SA` sem
+  preço (resolvido no mesmo dia, ver entrada da noite).
+- Itens de *A fazer* renumerados: Deploy virou o item 1.
+
+**Pendente aqui:** registrar a tarefa no Agendador (comando na *Rotina da Mesa*), quando o
+Gabriel quiser; no servidor, depende do deploy (item 1).
 
 ### 2026-09-22 (noite) — repositório público e README de passagem
 
@@ -248,9 +352,10 @@ mural, série comparada, congelamento do ranking). `desafio/tests.py` ganhou a b
 core/          motor puro, sem Django   engine · models · custos · metricas · calendario · universo
 desafio/       app Django               models · admin · views · forms · adapters · urls
   servicos/    carteira (visão, série de cotas, ranking) · precos (yfinance/BCB)
-  management/  puxar_precos · liquidar_semana · fechar_dia · semear_demo
+  management/  rotina_diaria · backup_banco · puxar_precos · liquidar_semana · fechar_dia · semear_demo
 config/        settings · urls · asgi/wsgi
 templates/     base + dashboard · ordens · extrato · ranking · login
+agendamento/   rotina_diaria.bat (Agendador do Windows; log em logs/)
 tests/         test_engine · test_custos · test_metricas · test_calendario   (motor)
 desafio/tests.py                                                            (integração)
 ```

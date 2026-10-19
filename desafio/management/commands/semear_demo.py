@@ -28,8 +28,8 @@ PRECO_BASE = {
     "GLD": 200, "IMAB11.SA": 100, "XFIX11.SA": 9, "VNQ": 90, "XLV": 145,
     "IBIT": 60, "NLR": 90, "BOTZ": 35, "PAVE": 42, "XLK": 220, "XLF": 45,
     "PETR4.SA": 38, "VALE3.SA": 62, "ITUB4.SA": 34, "BBAS3.SA": 27,
-    "WEGE3.SA": 52, "ELET3.SA": 41, "RENT3.SA": 45, "RADL3.SA": 26,
-    "SUZB3.SA": 58, "JBSS3.SA": 33, "B3SA3.SA": 12, "ABEV3.SA": 13, "MGLU3.SA": 9,
+    "WEGE3.SA": 52, "AXIA3.SA": 55, "RENT3.SA": 45, "RADL3.SA": 26,
+    "SUZB3.SA": 58, "JBSS32.SA": 56, "B3SA3.SA": 12, "ABEV3.SA": 13, "MGLU3.SA": 9,
 }
 
 # Uma carteira diferente por fundo, para o gráfico não sair com quatro linhas iguais.
