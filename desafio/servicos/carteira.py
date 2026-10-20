@@ -13,7 +13,7 @@ from decimal import Decimal
 from django.db.models import Q
 
 from core import engine
-from core.calendario import eh_dia_util, ultimo_dia_util_da_semana
+from core.calendario import ultimo_dia_util_da_semana
 from core.universo import UNIVERSO
 
 from .. import adapters, models
@@ -114,8 +114,8 @@ def visao(fundo: models.Fundo) -> VisaoCarteira:
         # Há preço mas o fechamento do dia ainda não rodou.
         fundo_core = adapters.para_core_fundo(fundo)
         eventos = adapters.eventos_do_fundo(fundo, ate=dia)
-        taxa = adapters.taxa_cdi_do_dia(dia)
-        parcial = engine.fechar(fundo_core, eventos, precos, cambios, taxa, dia)
+        cdi = adapters.curva_cdi(dia)
+        parcial = engine.fechar(fundo_core, eventos, precos, cambios, cdi, dia)
         caixa, valor_posicoes = parcial.caixa, parcial.valor_posicoes
         patrimonio, cota = parcial.patrimonio, parcial.cota
 
@@ -269,30 +269,22 @@ def _rebasar(valores: dict[date, Decimal], datas: list[date]) -> list[float | No
     return [float(valores[d] / base * 100) if d in valores else None for d in datas]
 
 
-def _serie_cdi(datas: list[date]) -> list[float]:
-    """CDI acumulado, capitalizado em dia útil, base 100 na primeira data."""
-    inicio, fim = datas[0], datas[-1]
-    taxas = dict(
-        models.TaxaCDI.objects.filter(data__gte=inicio, data__lte=fim).values_list(
-            "data", "taxa_diaria"
-        )
-    )
-    corrente = (
-        models.TaxaCDI.objects.filter(data__lte=inicio)
-        .order_by("-data")
-        .values_list("taxa_diaria", flat=True)
-        .first()
-    ) or Decimal("0")
+def _serie_cdi(datas: list[date]) -> list[float | None]:
+    """CDI acumulado, base 100 na primeira data.
 
-    alvo, valores, acumulado = set(datas), [], Decimal("100")
-    dia = inicio
-    while dia <= fim:
-        corrente = taxas.get(dia, corrente)
-        if dia > inicio and eh_dia_util(dia):
-            acumulado *= 1 + corrente
-        if dia in alvo:
+    Usa a mesma curva que rende o caixa dos fundos: um fundo parado em caixa
+    acompanha esta linha exatamente. Sem CDI cadastrado desde a primeira data,
+    a linha fica vazia em vez de inventar taxa zero.
+    """
+    try:
+        curva = adapters.curva_cdi(datas[-1])
+        valores, acumulado, anterior = [], Decimal("100"), datas[0]
+        for dia in datas:
+            acumulado *= curva.fator(anterior, dia)
+            anterior = dia
             valores.append(float(acumulado))
-        dia += timedelta(days=1)
+    except ValueError:
+        return [None] * len(datas)
     return valores
 
 

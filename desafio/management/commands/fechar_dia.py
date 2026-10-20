@@ -16,6 +16,7 @@ from django.db import transaction
 
 from core import engine
 from core.calendario import eh_dia_util
+from core.cdi import CDIIndisponivel
 from desafio import adapters, models
 
 
@@ -49,13 +50,16 @@ class Command(BaseCommand):
                 "Rode `manage.py puxar_precos` antes."
             )
 
-        taxa_cdi = adapters.taxa_cdi_do_dia(dia)
+        try:
+            cdi = adapters.curva_cdi(dia)
+        except ValueError as erro:
+            raise CommandError(str(erro)) from erro
 
         for fundo in models.Fundo.objects.filter(ativo=True):
-            self._apurar(fundo, dia, precos, cambios, taxa_cdi, refazer)
+            self._apurar(fundo, dia, precos, cambios, cdi, refazer)
 
     @transaction.atomic
-    def _apurar(self, fundo, dia, precos, cambios, taxa_cdi, refazer):
+    def _apurar(self, fundo, dia, precos, cambios, cdi, refazer):
         if fundo.inicio > dia:
             return
 
@@ -78,8 +82,10 @@ class Command(BaseCommand):
 
         try:
             fechamento, aluguel = engine.apurar_dia(
-                fundo_core, eventos, precos, cambios, taxa_cdi, dia
+                fundo_core, eventos, precos, cambios, cdi, dia
             )
+        except CDIIndisponivel as erro:
+            raise CommandError(f"{fundo}: {erro}") from erro
         except KeyError as erro:
             # Faltou preço de um ativo que o fundo carrega: não dá para marcar a
             # carteira. Melhor não apurar do que apurar errado.

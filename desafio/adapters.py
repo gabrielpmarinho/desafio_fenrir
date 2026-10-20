@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
+from core.cdi import CurvaCDI
 from core.models import EventoCaixa
 from core.models import Fundo as FundoCore
 from core.models import Lancamento as LancamentoCore
@@ -88,14 +89,18 @@ def precos_do_dia(dia: date) -> tuple[dict[str, Decimal], dict[str, Decimal]]:
     return precos, cambios
 
 
-def taxa_cdi_do_dia(dia: date) -> Decimal:
-    """Último CDI divulgado até o dia. O BCB publica com defasagem."""
-    taxa = (
-        models.TaxaCDI.objects.filter(data__lte=dia).order_by("-data").first()
+def curva_cdi(ate: date) -> CurvaCDI:
+    """Todas as taxas gravadas até `ate`, para cada dia render à sua.
+
+    Nunca uma taxa só para o histórico inteiro: era assim antes, e uma mudança
+    da Selic refazia o rendimento passado de todos os fundos.
+    """
+    pontos = models.TaxaCDI.objects.filter(data__lte=ate).values_list(
+        "data", "taxa_diaria"
     )
-    if taxa is None:
+    if not pontos:
         raise ValueError(
             "Nenhuma taxa CDI cadastrada. Cadastre em Taxas CDI no admin "
             "(MANUAL_ADMIN.md §8, passo 6)."
         )
-    return taxa.taxa_diaria
+    return CurvaCDI.de(pontos)

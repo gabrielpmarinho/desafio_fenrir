@@ -6,7 +6,8 @@ onde a economia toda morava dentro do handler de um botão do Streamlit.
 
 Convenções (regulamento §3.2 e §4):
   - Todo fundo começa com R$ 100.000.000,00 e cota base 100,00.
-  - Caixa livre rende CDI em dias úteis, capitalizado.
+  - Caixa livre rende CDI em dias úteis, capitalizado, cada dia à taxa vigente
+    naquele dia (`cdi.CurvaCDI`).
   - Não há alavancagem: |comprado| + |vendido| <= patrimônio.
   - Ativo estrangeiro é convertido para BRL pelo câmbio do momento da execução.
 """
@@ -18,7 +19,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Iterable, Mapping
 
-from .calendario import dias_uteis
+from .cdi import CurvaCDI
 from .custos import lancamento_aluguel
 from .models import (
     Ativo,
@@ -58,14 +59,15 @@ def posicoes(eventos: Iterable[EventoCaixa], ate: date | None = None) -> dict[st
 def caixa(
     fundo: Fundo,
     eventos: Iterable[EventoCaixa],
-    taxa_cdi_diaria: Decimal,
+    cdi: CurvaCDI,
     ate: date,
 ) -> Decimal:
     """Saldo de caixa em `ate`, com CDI capitalizado entre os eventos.
 
     O rendimento é aplicado sobre o saldo vigente em cada intervalo e incorporado
     ao próprio saldo — operar não zera os juros acumulados, que era o defeito da
-    versão anterior.
+    versão anterior. Cada dia rende à taxa vigente nele: mudar o CDI hoje não
+    refaz o rendimento de ontem.
 
     Num mesmo dia os trades liquidam antes dos lançamentos (o aluguel do short
     incide sobre a posição que ficou de pé no fechamento).
@@ -78,23 +80,16 @@ def caixa(
     saldo = fundo.caixa_inicial
     cursor = fundo.inicio
     for evento in relevantes:
-        saldo = _render(saldo, cursor, evento.executado_em, taxa_cdi_diaria)
+        saldo *= cdi.fator(cursor, evento.executado_em)
         saldo += evento.fluxo_caixa
         cursor = evento.executado_em
-    return _render(saldo, cursor, ate, taxa_cdi_diaria)
+    return saldo * cdi.fator(cursor, ate)
 
 
 def _ordem_no_dia(evento: EventoCaixa) -> tuple[date, int, str]:
     if isinstance(evento, Trade):
         return (evento.executado_em, 0, evento.ticker)
     return (evento.executado_em, 1, evento.tipo.value)
-
-
-def _render(saldo: Decimal, de: date, ate: date, taxa_diaria: Decimal) -> Decimal:
-    dias = dias_uteis(de, ate)
-    if dias == 0:
-        return saldo
-    return saldo * (Decimal(1) + taxa_diaria) ** dias
 
 
 def valor_posicoes(
@@ -141,7 +136,7 @@ def executar(
     universo: Mapping[str, Ativo],
     precos: Mapping[str, Decimal],
     cambios: Mapping[str, Decimal],
-    taxa_cdi_diaria: Decimal,
+    cdi: CurvaCDI,
     data_execucao: date,
 ) -> ResultadoValidacao:
     """Valida a boleta contra o estado atual e devolve o Trade ou a Rejeição.
@@ -167,7 +162,7 @@ def executar(
         executado_em=data_execucao,
     )
 
-    saldo = caixa(fundo, ledger_do_fundo, taxa_cdi_diaria, data_execucao)
+    saldo = caixa(fundo, ledger_do_fundo, cdi, data_execucao)
     posicoes_depois = posicoes([*ledger_do_fundo, candidato], ate=data_execucao)
     patrimonio_depois = patrimonio(
         saldo + candidato.fluxo_caixa,
@@ -194,7 +189,7 @@ def executar_lote(
     universo: Mapping[str, Ativo],
     precos: Mapping[str, Decimal],
     cambios: Mapping[str, Decimal],
-    taxa_cdi_diaria: Decimal,
+    cdi: CurvaCDI,
     data_execucao: date,
 ) -> list[tuple[Ordem, ResultadoValidacao]]:
     """Liquida a fila da semana na ordem de chegada.
@@ -218,7 +213,7 @@ def executar_lote(
             universo,
             precos,
             cambios,
-            taxa_cdi_diaria,
+            cdi,
             data_execucao,
         )
         if isinstance(resultado, Trade):
@@ -236,7 +231,7 @@ def fechar(
     eventos: Iterable[EventoCaixa],
     precos: Mapping[str, Decimal],
     cambios: Mapping[str, Decimal],
-    taxa_cdi_diaria: Decimal,
+    cdi: CurvaCDI,
     data: date,
 ) -> Fechamento:
     """Foto do fundo na data, a partir do ledger como ele está.
@@ -245,7 +240,7 @@ def fechar(
     oficial do fechamento diário.
     """
     do_fundo = [e for e in eventos if e.fundo == fundo.nome]
-    saldo = caixa(fundo, do_fundo, taxa_cdi_diaria, data)
+    saldo = caixa(fundo, do_fundo, cdi, data)
     posicoes_atuais = posicoes(do_fundo, ate=data)
     mtm = valor_posicoes(posicoes_atuais, precos, cambios)
     total = patrimonio(saldo, mtm)
@@ -265,7 +260,7 @@ def apurar_dia(
     eventos: Iterable[EventoCaixa],
     precos_fechamento: Mapping[str, Decimal],
     cambios: Mapping[str, Decimal],
-    taxa_cdi_diaria: Decimal,
+    cdi: CurvaCDI,
     dia: date,
 ) -> tuple[Fechamento, Lancamento | None]:
     """Rotina oficial de fechamento do dia, rodada após o mercado fechar.
@@ -286,6 +281,6 @@ def apurar_dia(
     ledger_do_dia = [*do_fundo, aluguel] if aluguel else do_fundo
 
     fechamento = fechar(
-        fundo, ledger_do_dia, precos_fechamento, cambios, taxa_cdi_diaria, dia
+        fundo, ledger_do_dia, precos_fechamento, cambios, cdi, dia
     )
     return fechamento, aluguel

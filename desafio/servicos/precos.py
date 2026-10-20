@@ -7,12 +7,14 @@ persistido — a apuração lê do banco, nunca da API.
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 import requests
 import yfinance as yf
 
+from core.calendario import dia_util_anterior
+from core.cdi import validar_taxa
 from core.universo import UNIVERSO
 
 from .. import models
@@ -21,7 +23,10 @@ logger = logging.getLogger(__name__)
 
 # Série 12 do SGS é o CDI diário. A série 11 é a Selic — a versão antiga do
 # terminal usava a 11 por engano.
-URL_CDI = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados/ultimos/1?formato=json"
+URL_CDI = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados"
+# Quantos dias corridos para trás a consulta cobre: tapa buraco de feriado
+# prolongado ou de alguns dias com o BCB fora do ar.
+JANELA_CDI = 10
 TICKER_CAMBIO = "USDBRL=X"
 
 # Índices de referência do gráfico da carteira. Não são investíveis: ficam fora
@@ -89,21 +94,53 @@ def puxar_cambio(dia: date) -> Decimal | None:
 
 
 def puxar_cdi(dia: date) -> Decimal | None:
-    """CDI diário do BCB, em fração (0,0005 = 0,05% a.d.)."""
-    if (existente := models.TaxaCDI.objects.filter(data=dia).first()) is not None:
+    """Grava o CDI dos dias úteis antes de `dia` que ainda faltam no banco.
+
+    O fechamento de `dia` só usa taxas de dias anteriores (o dia útil d rende de
+    d para o seguinte), e o BCB divulga o CDI de d na manhã seguinte — por isso
+    a consulta termina na véspera. Cada valor é gravado na data a que se refere,
+    nunca na data da consulta: rodar de novo, ou com atraso, grava o mesmo.
+
+    Devolve a taxa da véspera útil, em fração (0,0005 = 0,05% a.d.), ou None se
+    o BCB não a entregou.
+    """
+    vespera = dia_util_anterior(dia - timedelta(days=1))
+    if (existente := models.TaxaCDI.objects.filter(data=vespera).first()) is not None:
         return existente.taxa_diaria
 
+    parametros = {
+        "formato": "json",
+        "dataInicial": f"{dia - timedelta(days=JANELA_CDI):%d/%m/%Y}",
+        "dataFinal": f"{vespera:%d/%m/%Y}",
+    }
     try:
-        resposta = requests.get(URL_CDI, timeout=20)
+        resposta = requests.get(URL_CDI, params=parametros, timeout=20)
         resposta.raise_for_status()
-        percentual = Decimal(str(resposta.json()[0]["valor"]))
+        pontos = {
+            datetime.strptime(p["data"], "%d/%m/%Y").date(): Decimal(str(p["valor"]))
+            / Decimal("100")
+            for p in resposta.json()
+        }
     except Exception:
         logger.exception("Falha ao buscar CDI no BCB")
         return None
 
-    taxa = percentual / Decimal("100")
-    models.TaxaCDI.objects.create(data=dia, taxa_diaria=taxa)
-    return taxa
+    limite = models.TaxaCDI.primeira_data_editavel()
+    for data_ponto, taxa in sorted(pontos.items()):
+        if limite and data_ponto < limite:
+            continue  # cota já apurada com a taxa que estava lá; não se reescreve
+        try:
+            validar_taxa(taxa, data_ponto)
+        except ValueError:
+            logger.error("CDI do BCB descartado: %s em %s", taxa, data_ponto)
+            continue
+        models.TaxaCDI.objects.get_or_create(data=data_ponto, defaults={"taxa_diaria": taxa})
+
+    return (
+        models.TaxaCDI.objects.filter(data=vespera)
+        .values_list("taxa_diaria", flat=True)
+        .first()
+    )
 
 
 def puxar_benchmarks(dia: date) -> tuple[int, list[str]]:

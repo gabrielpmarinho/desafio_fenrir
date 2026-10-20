@@ -13,10 +13,11 @@ from decimal import Decimal
 import pytest
 
 from core import engine
+from core.cdi import CurvaCDI
 from core.models import Direcao, Fundo, Ordem, Rejeicao, Trade
 from core.universo import UNIVERSO
 
-CDI_DIARIO = Decimal("0.0005")  # ~13,3% a.a. em 252 dias úteis
+CDI_DIARIO = CurvaCDI.constante(Decimal("0.0005"))  # ~13,3% a.a. em 252 dias úteis
 INICIO = date(2026, 10, 5)  # segunda-feira
 EXECUCAO = date(2026, 10, 12)  # segunda seguinte
 

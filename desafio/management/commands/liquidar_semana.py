@@ -14,6 +14,7 @@ from django.db import transaction
 
 from core import engine
 from core.calendario import eh_dia_util
+from core.cdi import CDIIndisponivel
 from core.models import Direcao, Ordem as OrdemCore, Rejeicao
 from core.universo import UNIVERSO
 from desafio import adapters, models
@@ -60,18 +61,21 @@ class Command(BaseCommand):
                 f"Sem preços para {dia:%d/%m/%Y}. Rode `manage.py puxar_precos` antes."
             )
 
-        taxa_cdi = adapters.taxa_cdi_do_dia(dia)
+        try:
+            cdi = adapters.curva_cdi(dia)
+        except ValueError as erro:
+            raise CommandError(str(erro)) from erro
 
         # Cada fundo é liquidado isoladamente: o limite de exposição é por fundo,
         # e uma rejeição num fundo não pode contaminar outro.
         for fundo in {o.fundo for o in pendentes}:
             do_fundo = [o for o in pendentes if o.fundo_id == fundo.id]
             self._liquidar_fundo(
-                fundo, do_fundo, dia, precos, cambios, taxa_cdi, simular
+                fundo, do_fundo, dia, precos, cambios, cdi, simular
             )
 
     @transaction.atomic
-    def _liquidar_fundo(self, fundo, ordens, dia, precos, cambios, taxa_cdi, simular):
+    def _liquidar_fundo(self, fundo, ordens, dia, precos, cambios, cdi, simular):
         fundo_core = adapters.para_core_fundo(fundo)
         ledger = adapters.eventos_do_fundo(fundo, ate=dia)
 
@@ -90,16 +94,19 @@ class Command(BaseCommand):
             boletas.append(boleta)
             registros[id(boleta)] = registro
 
-        resultados = engine.executar_lote(
-            boletas,
-            {fundo.nome: fundo_core},
-            ledger,
-            UNIVERSO,
-            precos,
-            cambios,
-            taxa_cdi,
-            dia,
-        )
+        try:
+            resultados = engine.executar_lote(
+                boletas,
+                {fundo.nome: fundo_core},
+                ledger,
+                UNIVERSO,
+                precos,
+                cambios,
+                cdi,
+                dia,
+            )
+        except CDIIndisponivel as erro:
+            raise CommandError(f"{fundo}: {erro}") from erro
 
         for boleta, resultado in resultados:
             registro = registros[id(boleta)]

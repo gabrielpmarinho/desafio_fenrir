@@ -12,7 +12,10 @@ from __future__ import annotations
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
+
+from core.cdi import validar_taxa
 
 DINHEIRO = {"max_digits": 20, "decimal_places": 2}
 PRECO = {"max_digits": 20, "decimal_places": 8}
@@ -176,10 +179,19 @@ class Cotacao(models.Model):
 
 
 class TaxaCDI(models.Model):
-    """CDI diário do BCB (série 12), guardado para a apuração ser reproduzível."""
+    """CDI diário do BCB (série 12), guardado para a apuração ser reproduzível.
 
-    data = models.DateField(unique=True)
-    taxa_diaria = models.DecimalField(max_digits=12, decimal_places=10)
+    Cada linha vale da sua data até a linha seguinte (`core.cdi.CurvaCDI`): a
+    série diária do BCB e o cadastro manual da Mesa, que só lança quando o
+    Copom muda a taxa, funcionam igual.
+    """
+
+    data = models.DateField(unique=True, help_text="Primeiro dia em que a taxa vale.")
+    taxa_diaria = models.DecimalField(
+        max_digits=12,
+        decimal_places=10,
+        help_text="Fração diária: (1 + CDI anual)^(1/252) − 1. 13,65% a.a. → 0.00050788.",
+    )
 
     class Meta:
         ordering = ["-data"]
@@ -188,6 +200,32 @@ class TaxaCDI(models.Model):
 
     def __str__(self) -> str:
         return f"CDI {self.data} {self.taxa_diaria}"
+
+    @staticmethod
+    def primeira_data_editavel():
+        """Data mais antiga que ainda aceita taxa nova, ou None se nada foi apurado.
+
+        A cota apurada em F rendeu com as taxas dos dias antes de F. Uma taxa
+        com data anterior à última apuração mudaria a conta dessas cotas, que
+        já estão publicadas no ranking.
+        """
+        return Fechamento.objects.aggregate(ultima=models.Max("data"))["ultima"]
+
+    def clean(self):
+        if self.taxa_diaria is not None:
+            try:
+                validar_taxa(self.taxa_diaria)
+            except ValueError as erro:
+                raise ValidationError({"taxa_diaria": str(erro)}) from erro
+        limite = self.primeira_data_editavel()
+        if self.data and limite and self.data < limite:
+            raise ValidationError(
+                {
+                    "data": f"Já há cota apurada até {limite:%d/%m/%Y}. Uma taxa com "
+                    "data anterior refaria o rendimento de cotas já publicadas. "
+                    f"Use {limite:%d/%m/%Y} ou depois."
+                }
+            )
 
 
 class Fechamento(models.Model):

@@ -18,6 +18,7 @@ from io import StringIO
 from pathlib import Path
 from unittest import mock
 
+from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import TestCase, TransactionTestCase
@@ -27,6 +28,7 @@ from . import models
 
 SEGUNDA = date(2026, 10, 5)
 TERCA = date(2026, 10, 6)
+QUARTA = date(2026, 10, 7)
 # Boleta chega no fim de semana anterior à liquidação (janela de sáb/dom).
 SABADO_DA_JANELA = timezone.make_aware(datetime(2026, 10, 3, 14, 0))
 
@@ -229,6 +231,94 @@ class TestFechamento(MesaTestCase):
 
         primeiro, segundo = models.Fechamento.objects.order_by("data")
         self.assertGreater(segundo.cota, primeiro.cota)
+
+
+class TestCurvaCDI(MesaTestCase):
+    """Cada dia rende o CDI daquele dia, e o que já foi apurado não muda."""
+
+    def _precos(self, dia):
+        for ticker, preco in (("PETR4.SA", "40.00"), ("VALE3.SA", "60.00"), ("SPY", "500.00")):
+            models.PrecoFechamento.objects.create(ticker=ticker, data=dia, preco=Decimal(preco))
+        models.Cotacao.objects.create(data=dia, usd_brl=Decimal("5.40"))
+
+    def test_mudanca_de_taxa_vale_so_dali_em_diante(self):
+        models.TaxaCDI.objects.filter(data=TERCA).update(taxa_diaria=Decimal("0.0010"))
+        self._precos(QUARTA)
+
+        self._rodar("fechar_dia", data="2026-10-07")
+
+        # segunda a 0,05%, terça a 0,10%: nada de 0,10% nos dois dias
+        fechamento = models.Fechamento.objects.get(data=QUARTA)
+        self.assertEqual(fechamento.caixa, Decimal("100150050.00"))
+
+    def test_sem_cdi_desde_o_inicio_do_fundo_nao_apura(self):
+        models.TaxaCDI.objects.filter(data=SEGUNDA).delete()
+
+        with self.assertRaisesMessage(CommandError, "Sem CDI vigente em 05/10/2026"):
+            self._rodar("fechar_dia", data="2026-10-06")
+        self.assertFalse(models.Fechamento.objects.exists())
+
+    def test_admin_recusa_taxa_antes_da_ultima_apuracao(self):
+        self._rodar("fechar_dia", data="2026-10-05")
+        self._rodar("fechar_dia", data="2026-10-06")
+
+        with self.assertRaisesMessage(ValidationError, "06/10/2026"):
+            models.TaxaCDI(data=SEGUNDA, taxa_diaria=Decimal("0.0006")).full_clean(
+                validate_unique=False
+            )
+        models.TaxaCDI(data=TERCA, taxa_diaria=Decimal("0.0006")).full_clean(
+            validate_unique=False
+        )
+
+    def test_admin_recusa_porcentagem_no_lugar_da_fracao(self):
+        with self.assertRaisesMessage(ValidationError, "fração diária"):
+            models.TaxaCDI(data=QUARTA, taxa_diaria=Decimal("0.0508")).full_clean()
+
+
+class TestPuxarCDI(MesaTestCase):
+    """A consulta ao BCB grava cada valor na data a que ele se refere."""
+
+    def _bcb(self, pontos):
+        resposta = mock.Mock()
+        resposta.json.return_value = [{"data": d, "valor": v} for d, v in pontos]
+        return mock.patch("desafio.servicos.precos.requests.get", return_value=resposta)
+
+    def test_grava_a_janela_e_devolve_a_vespera(self):
+        from desafio.servicos import precos
+
+        with self._bcb([("07/10/2026", "0.055131"), ("08/10/2026", "0.055131")]) as get:
+            taxa = precos.puxar_cdi(date(2026, 10, 9))
+
+        self.assertEqual(taxa, Decimal("0.00055131"))
+        self.assertEqual(get.call_args.kwargs["params"]["dataFinal"], "08/10/2026")
+        self.assertTrue(models.TaxaCDI.objects.filter(data=QUARTA).exists())
+
+    def test_nao_consulta_se_a_vespera_ja_esta_gravada(self):
+        from desafio.servicos import precos
+
+        with self._bcb([]) as get:
+            taxa = precos.puxar_cdi(QUARTA)
+
+        get.assert_not_called()
+        self.assertEqual(taxa, Decimal("0.0005"))
+
+    def test_nao_reescreve_dia_ja_apurado(self):
+        from desafio.servicos import precos
+
+        models.Fechamento.objects.create(
+            fundo=self.fundo, data=QUARTA, caixa=0, valor_posicoes=0, patrimonio=0, cota=0
+        )
+
+        with self._bcb([("06/10/2026", "0.06"), ("07/10/2026", "0.06")]):
+            precos.puxar_cdi(date(2026, 10, 8))
+
+        # terça já tinha taxa e é anterior à última apuração: fica como estava
+        self.assertEqual(
+            models.TaxaCDI.objects.get(data=TERCA).taxa_diaria, Decimal("0.0005")
+        )
+        self.assertEqual(
+            models.TaxaCDI.objects.get(data=QUARTA).taxa_diaria, Decimal("0.0006")
+        )
 
 
 class TestRotinaDiaria(MesaTestCase):

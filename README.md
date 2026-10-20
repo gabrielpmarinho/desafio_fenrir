@@ -67,7 +67,7 @@ caro para serem descobertas:
 
 | Camada | Situação |
 |---|---|
-| `core/` — motor puro | ✅ pronto e testado (47 testes) |
+| `core/` — motor puro | ✅ pronto e testado (55 testes) |
 | `desafio/` — models, admin, comandos | ✅ pronto e testado |
 | Integração de preços (yfinance/BCB) | ✅ pronto (sem teste de rede) |
 | Telas do participante | ✅ login, carteira, ordens, extrato, ranking |
@@ -77,7 +77,7 @@ caro para serem descobertas:
 | Rotina diária (`rotina_diaria`) | ✅ Agendador do Windows no PC; GitHub Actions em produção |
 | Deploy | 🟨 decidido e preparado (Render + Neon + GitHub Actions); falta criar as contas |
 
-Testes: **47** no motor (pytest) + **43** de integração (Django).
+Testes: **55** no motor (pytest) + **50** de integração (Django).
 
 ## Arquitetura
 
@@ -93,7 +93,8 @@ ledger e devolve o estado. Três decisões sustentam isso:
 ## Regras implementadas
 
 - Patrimônio inicial R$ 100.000.000,00; cota base 100,00 (1.000.000 de cotas).
-- Caixa livre rende CDI em dias úteis, **capitalizado** — operar não zera juros.
+- Caixa livre rende CDI em dias úteis, **capitalizado** — operar não zera juros. Cada dia
+  rende a taxa vigente nele (`core/cdi.py`): mudar o CDI hoje não refaz o rendimento de ontem.
 - Sem alavancagem: `|comprado| + |vendido| <= patrimônio` (regra do JGP).
 - Ativos em dólar convertidos para BRL no momento da execução.
 - Whitelist fechada de 30 ativos (`core/universo.py`).
@@ -114,8 +115,8 @@ Lista viva — o que sai daqui vai para o registro no fim do arquivo.
 | # | Item | Observação |
 |---|---|---|
 | 1 | **Subir o deploy** | Host **decidido em 19/10/2026: Render (site) + Neon (banco) + GitHub Actions (rotina e backup)**, tudo grátis. Código e configuração prontos (`render.yaml`, `.github/workflows/rotina_diaria.yml`). Falta o que só o dono das contas faz: criar Neon e Render, cadastrar os segredos no GitHub e o superusuário — passo a passo em `MANUAL_ADMIN.md` §8. Plano B pago no mesmo lugar. |
-| 2 | **CDI no motor** | O motor rende todo o histórico de caixa com **uma** taxa diária (a do dia da apuração). Enquanto o Copom não muda a Selic, dá no mesmo; se mudar no meio do desafio, o rendimento passado é recalculado com a taxa nova. Corrigir para render cada dia com o CDI daquele dia (**série 12** — a 11 é Selic). Desde out/2026 a API SGS do BCB devolve página de erro (de qualquer lugar); o CDI entra pelo admin. Vale achar uma fonte alternativa. |
-| 3 | **Integração de preços sem teste** | `desafio/servicos/precos.py` fala com yfinance e BCB e não tem teste unitário — nem com rede, nem com resposta gravada. Existe só o teste de fumaça manual `teste_fontes.yml` no GitHub Actions. |
+| 2 | **Fonte alternativa de CDI** | Desde out/2026 a API SGS do BCB devolve página de erro (de qualquer lugar); o CDI entra pelo admin quando o Copom muda a taxa. Se o BCB voltar, a rotina grava sozinha. Vale achar outra fonte (B3, Anbima) para não depender do cadastro manual. |
+| 3 | **Integração de preços com pouco teste** | `desafio/servicos/precos.py`: o `puxar_cdi` tem teste com resposta simulada; yfinance (preços, câmbio, índices) continua só com o teste de fumaça manual `teste_fontes.yml` no GitHub Actions. |
 | 4 | **Licença do repositório** | Sem `LICENSE`, o código é "todos os direitos reservados" por padrão — nem outro membro da liga pode reusar legalmente. Decisão da diretoria; MIT é o usual em projeto acadêmico. |
 | 5 | **Primeira semana do desafio** | Antes da primeira sexta, o ranking mostra a apuração mais recente (recuo do `data_do_ranking`). Decidir se a tela deve avisar que aquela foto ainda é parcial. |
 
@@ -210,6 +211,38 @@ Mantido a pedido do Gabriel (21/09/2026) para que o contexto não se perca entre
 Desde 22/09/2026 o projeto também está sob git: o `git log` conta o que mudou linha a
 linha, e este registro conta **por quê** — as duas coisas se completam, nenhuma substitui
 a outra.
+
+### 2026-10-20 — CDI no motor: cada dia à sua taxa (antigo item 2)
+
+- **O defeito:** `engine.caixa` rendia todo o histórico do caixa com **uma** taxa, a do dia da
+  apuração. Na primeira mudança do Copom, o rendimento passado de todos os fundos seria refeito
+  com a taxa nova e a cota saltaria — em cotas já publicadas no ranking.
+- **A correção:** `core/cdi.py` com a `CurvaCDI`. Cada registro de `TaxaCDI` vale **da sua data
+  até o registro seguinte**; o dia útil d rende de d para o seguinte à taxa vigente em d (mesma
+  convenção do `dias_uteis`). Serve tanto para a série diária do BCB quanto para o cadastro
+  manual, que só lança uma linha quando o Copom muda a taxa. O motor recebe a curva em vez de um
+  número (`caixa`, `executar`, `executar_lote`, `fechar`, `apurar_dia`); o `adapters.curva_cdi`
+  monta a curva com o que está no banco.
+- **Sem CDI não há rendimento inventado:** dia sem taxa vigente (antes do primeiro registro) é
+  erro (`CDIIndisponivel`), e o `fechar_dia`/`liquidar_semana` param com a mensagem, em vez de
+  render zero.
+- **O passado não se reescreve:** o admin recusa taxa com data anterior à última apuração (a cota
+  de F rendeu com as taxas dos dias antes de F) e taxa fora de 0 a 0,002 ao dia — barra o erro
+  mais provável, digitar a porcentagem (0,0508) no lugar da fração (0,000508). O campo ganhou
+  texto de ajuda com a fórmula. Migração `0003_taxacdi_vigencia` (só texto de ajuda).
+- **`puxar_cdi` reproduzível:** antes pedia "o último valor" ao BCB e o gravava **na data da
+  consulta** — rodar com atraso gravava a taxa errada no dia errado. Agora consulta uma janela
+  de 10 dias até a véspera, grava cada valor **na data a que se refere**, valida a taxa e pula
+  dias anteriores à última apuração.
+- **Gráfico:** a linha do CDI usa a mesma curva do caixa (um fundo parado em caixa acompanha a
+  linha exatamente). Sem CDI cadastrado desde o primeiro fechamento, a linha fica vazia em vez
+  de taxa zero.
+- Testes novos: `tests/test_cdi.py` (8: taxa muda no meio do período, passado intacto, taxa
+  lançada no fim de semana, falta de CDI, porcentagem no lugar da fração, data repetida) e 7 de
+  integração (`TestCurvaCDI`, `TestPuxarCDI`, este com resposta do BCB simulada). Total:
+  **55 + 50**, verdes.
+
+**Pendente aqui:** nada do item. A fonte alternativa de CDI virou o item 2 do *A fazer*.
 
 ### 2026-10-19 — host decidido, deploy preparado, documentação acertada
 
@@ -397,7 +430,7 @@ mural, série comparada, congelamento do ranking). `desafio/tests.py` ganhou a b
 ### Mapa de arquivos
 
 ```
-core/          motor puro, sem Django   engine · models · custos · metricas · calendario · universo
+core/          motor puro, sem Django   engine · cdi · models · custos · metricas · calendario · universo
 desafio/       app Django               models · admin · views · forms · adapters · urls
   servicos/    carteira (visão, série de cotas, ranking) · precos (yfinance/BCB)
   management/  rotina_diaria · backup_banco · puxar_precos · liquidar_semana · fechar_dia · semear_demo
@@ -406,7 +439,7 @@ templates/     base + dashboard · ordens · extrato · ranking · login
 agendamento/   rotina_diaria.bat (Agendador do Windows; log em logs/)
 .github/       workflows: rotina_diaria (produção) · teste_fontes (Yahoo/BCB, manual)
 render.yaml    blueprint do site no Render
-tests/         test_engine · test_custos · test_metricas · test_calendario   (motor)
+tests/         test_engine · test_cdi · test_custos · test_metricas · test_calendario   (motor)
 desafio/tests.py                                                            (integração)
 ```
 

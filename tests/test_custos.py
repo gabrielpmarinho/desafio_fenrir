@@ -6,10 +6,11 @@ from datetime import date
 from decimal import Decimal
 
 from core import custos, engine
+from core.cdi import CurvaCDI
 from core.models import Fundo, Lancamento, TipoLancamento, Trade
 
 INICIO = date(2026, 10, 5)  # segunda
-CDI_DIARIO = Decimal("0.0005")
+CDI_DIARIO = CurvaCDI.constante(Decimal("0.0005"))
 PRECOS = {"VALE3.SA": Decimal("60.00"), "PETR4.SA": Decimal("40.00")}
 CAMBIOS: dict[str, Decimal] = {}
 

@@ -48,7 +48,7 @@ de eventos. Consequência prática para você, administrador:
 | Patrimônio inicial | R$ 100.000.000,00 | `models.Fundo` |
 | Cotas emitidas | 1.000.000 | `models.Fundo` |
 | Cota inicial | 100,00 | derivada |
-| CDI sobre caixa livre | capitalizado por dia útil | `engine.caixa` |
+| CDI sobre caixa livre | capitalizado por dia útil, cada dia à taxa vigente nele | `engine.caixa`, `core/cdi.py` |
 | Alavancagem | proibida: \|comprado\| + \|vendido\| ≤ patrimônio | `engine.executar` |
 | Aluguel de short | 0,4% a.m., 1/20 por dia útil (0,02% a.d.) | `custos.py` |
 | Câmbio | convertido no momento da execução | `models.Trade` |
@@ -192,12 +192,14 @@ receber uma turma nova exigia editar o arquivo e refazer o deploy.
 | Posição com sinal invertido | Ler o ledger: quantidade positiva é compra, negativa é venda |
 | Aluno não consegue enviar ordem | A janela só abre sábado e domingo (regulamento §4) |
 | Aluno logou e tomou 404 | Usuário sem `Participante` vinculado a um fundo |
-| "CDI indisponível no BCB" no log | Esperado desde out/2026: a API SGS do BCB devolve uma página "Requisição inválida!" depois de ~30 s, de qualquer lugar (testado do GitHub e de um PC no Brasil em 19/10/2026). A rotina usa o último CDI gravado. Quando o Copom mudar a taxa, cadastrar o novo CDI no admin (§8, passo 6) |
+| "CDI indisponível no BCB" no log | Esperado desde out/2026: a API SGS do BCB devolve uma página "Requisição inválida!" depois de ~30 s, de qualquer lugar (testado do GitHub e de um PC no Brasil em 19/10/2026). Cada taxa gravada vale até a seguinte, então a rotina segue com o último CDI. Quando o Copom mudar a taxa, cadastrar o novo CDI no admin (§8, passo 6) |
 | "Nenhuma taxa CDI cadastrada" | Banco novo sem CDI: cadastrar no admin (§8, passo 6) |
+| "Sem CDI vigente em dd/mm/aaaa" | A primeira taxa cadastrada é posterior ao início do fundo. Cadastrar uma com data igual ou anterior ao início |
+| Admin recusa a taxa: "Já há cota apurada até…" | De propósito: taxa com data anterior à última apuração mudaria cotas já publicadas. Use a data indicada ou depois |
 | Site demora ~1 min para abrir | Render grátis dorme após 15 min sem acesso; o primeiro acesso acorda. Não é erro |
 | Rotina parou de rodar sozinha | Workflow desabilitado (aba *Actions* → *Rotina diária* → *Enable workflow*); depois rodar à mão com `desde` = dia seguinte ao último fechamento |
 
-Antes de mexer em qualquer regra, rode `python -m pytest -q`. São 47 testes e
+Antes de mexer em qualquer regra, rode `python -m pytest -q`. São 55 testes e
 levam menos de um décimo de segundo. Quatro deles reproduzem exatamente os bugs
 que quebraram a versão anterior — se algum falhar, você reintroduziu um deles.
 
@@ -215,6 +217,8 @@ que quebraram a versão anterior — se algum falhar, você reintroduziu um dele
 - [x] ~~Integração de preços e CDI~~ (série 12 do SGS; a versão antiga usava a
       11, que é Selic). Desde out/2026 a API do BCB está falhando; o CDI entra
       pelo admin (§8, passo 6)
+- [x] ~~CDI dia a dia no motor~~ — cada dia rende a taxa vigente nele
+      (`core/cdi.py`, 20/10/2026); o passado não é refeito quando o CDI muda
 
 ---
 
@@ -257,9 +261,13 @@ para administrar. O motivo de cada escolha está no README (registro de 19/10/20
    ```
    Feche o terminal depois: a variável some com ele.
 5. **Edição**: em `https://<endereço>/admin`, cadastrar fundos e usuários (§4).
-6. **CDI**: no admin, *Taxas CDI → Adicionar*, com a data de hoje e a taxa
-   **diária em fração**: `(1 + CDI anual)^(1/252) − 1`. Ex.: CDI de 13,65% a.a. →
-   `1,1365^(1/252) − 1` = `0.00050788`. Repetir sempre que o Copom mudar a Selic.
+6. **CDI**: no admin, *Taxas CDI → Adicionar*, com a taxa **diária em fração**:
+   `(1 + CDI anual)^(1/252) − 1`. Ex.: CDI de 13,65% a.a. → `1,1365^(1/252) − 1` =
+   `0.00050788` (o admin recusa `0.050788`, a porcentagem). A data é o **primeiro dia em que
+   a taxa vale**; cada taxa vale até a seguinte, então só se cadastra de novo quando o Copom
+   mudar a Selic. No banco novo, a primeira taxa precisa ter data igual ou anterior ao início
+   dos fundos. Não dá para cadastrar com data anterior à última apuração: se o Copom mudou a
+   taxa e você só viu dias depois, cadastre com a data de hoje.
    (Se a API do BCB voltar, a rotina passa a gravar sozinha e este passo vira só
    conferência.)
 7. **Teste**: aba *Actions* → *Rotina diária* → *Run workflow*. O log deve mostrar
